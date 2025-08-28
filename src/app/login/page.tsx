@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import Image from 'next/image';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -34,13 +35,11 @@ import { BrainCircuit } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
-
 const formSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters.' }),
   name: z.string().optional(),
 });
-
 
 export default function LoginPage() {
   const router = useRouter();
@@ -78,9 +77,9 @@ export default function LoginPage() {
   const handleSignUp = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
     if (!values.name || values.name.trim() === '') {
-        form.setError("name", { type: "manual", message: "Name is required for sign up." });
-        setLoading(false);
-        return;
+      form.setError('name', { type: 'manual', message: 'Name is required for sign up.' });
+      setLoading(false);
+      return;
     }
     try {
       const userCredential = await createUserWithEmailAndPassword(
@@ -102,7 +101,7 @@ export default function LoginPage() {
 
   if (authLoading || user) {
     return (
-       <div className="flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-background">
+      <div className="flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-background">
         <BrainCircuit className="h-16 w-16 animate-pulse text-primary" />
       </div>
     );
@@ -111,9 +110,18 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <div className="flex flex-col items-center justify-center mb-6 text-center">
-          <BrainCircuit className="h-16 w-16 text-primary mb-2" />
-          <h1 className="text-3xl font-bold font-headline text-primary">L.I.A.</h1>
-          <p className="text-muted-foreground">Language Immersion AI</p>
+        <div className="mb-4">
+          <Image
+            src="https://i.imgur.com/wP42LzL.png"
+            alt="L.I.A. Avatar"
+            width={100}
+            height={100}
+            className="rounded-full"
+            priority
+          />
+        </div>
+        <h1 className="text-3xl font-bold font-headline text-primary">L.I.A.</h1>
+        <p className="text-muted-foreground">Language Immersion AI</p>
       </div>
       <Tabs defaultValue="signin" className="w-full max-w-sm" onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2">
@@ -121,108 +129,104 @@ export default function LoginPage() {
           <TabsTrigger value="signup">Sign Up</TabsTrigger>
         </TabsList>
         <Form {...form}>
-            <form onSubmit={form.handleSubmit(activeTab === 'signin' ? handleSignIn : handleSignUp)}>
-              <TabsContent value="signin">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Sign In</CardTitle>
-                    <CardDescription>
-                      Enter your credentials to access your account.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input placeholder="you@example.com" {...field} autoComplete="email" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="••••••••" {...field} autoComplete="current-password" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                  <CardFooter>
-                    <Button type="submit" className="w-full" disabled={loading}>
-                      {loading ? 'Signing In...' : 'Sign In'}
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </TabsContent>
-              <TabsContent value="signup">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Sign Up</CardTitle>
-                    <CardDescription>
-                      Create a new account to start learning.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Your Name" {...field} autoComplete="name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input placeholder="you@example.com" {...field} autoComplete="email" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="••••••••" {...field} autoComplete="new-password"/>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                  <CardFooter>
-                    <Button type="submit" className="w-full" disabled={loading}>
-                      {loading ? 'Creating Account...' : 'Sign Up'}
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </TabsContent>
-            </form>
-          </Form>
+          <form onSubmit={form.handleSubmit(activeTab === 'signin' ? handleSignIn : handleSignUp)}>
+            <TabsContent value="signin">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Sign In</CardTitle>
+                  <CardDescription>Enter your credentials to access your account.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input placeholder="you@example.com" {...field} autoComplete="email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="••••••••" {...field} autoComplete="current-password" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+                <CardFooter>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? 'Signing In...' : 'Sign In'}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </TabsContent>
+            <TabsContent value="signup">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Sign Up</CardTitle>
+                  <CardDescription>Create a new account to start learning.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Your Name" {...field} autoComplete="name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input placeholder="you@example.com" {...field} autoComplete="email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="••••••••" {...field} autoComplete="new-password" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+                <CardFooter>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? 'Creating Account...' : 'Sign Up'}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </TabsContent>
+          </form>
+        </Form>
       </Tabs>
     </main>
   );
