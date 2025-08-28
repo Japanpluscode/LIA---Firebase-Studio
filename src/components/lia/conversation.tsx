@@ -7,6 +7,7 @@ import {
   User,
   CheckCircle,
   BrainCircuit,
+  Mic,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -187,42 +188,18 @@ export default function Conversation({ topic, onTopicChange }: ConversationProps
         </ScrollArea>
       </CardContent>
 
-      <div className="border-t p-4 flex flex-col items-center gap-4 bg-background/80 backdrop-blur-sm">
-        <div className="w-full relative">
-          <Textarea
-            placeholder="Type your message..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            rows={1}
-            className="flex-1 resize-none pr-12 min-h-[40px]"
-            disabled={isLoading}
-          />
-        </div>
+      <div className="border-t p-4 flex items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
         <Button
           size="lg"
           className={cn(
-            'rounded-full w-16 h-16 shadow-lg transition-all',
+            'rounded-full w-20 h-20 shadow-lg transition-all',
             isAiSpeaking && 'animate-pulse-strong bg-accent'
           )}
           onClick={handleSendMessage}
-          disabled={isLoading || !inputValue.trim()}
+          disabled={isLoading}
           aria-label="Send Message"
         >
-          <Avatar className="h-14 w-14">
-            <AvatarImage
-              src={user?.photoURL || ''}
-              alt={user?.displayName || 'user'}
-            />
-            <AvatarFallback className="bg-transparent text-primary-foreground">
-              <User className="h-8 w-8" />
-            </AvatarFallback>
-          </Avatar>
+          <Mic className="h-8 w-8 text-primary-foreground" />
         </Button>
       </div>
     </Card>

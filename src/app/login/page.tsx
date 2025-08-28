@@ -112,7 +112,7 @@ export default function LoginPage() {
       <div className="flex flex-col items-center justify-center mb-6 text-center">
         <div className="mb-4">
           <Image
-            src="https://i.imgur.com/wP42LzL.png"
+            src="https://i.imgur.com/s42Tj6y.png"
             alt="L.I.A. Avatar"
             width={100}
             height={100}
