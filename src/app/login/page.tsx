@@ -112,7 +112,7 @@ export default function LoginPage() {
       <div className="flex flex-col items-center justify-center mb-6 text-center">
         <div className="mb-4">
           <Image
-            src="https://i.imgur.com/wP42LzL.png"
+            src="https://i.imgur.com/7g2l5A4.png"
             alt="L.I.A. Avatar"
             width={100}
             height={100}
@@ -209,7 +209,7 @@ export default function LoginPage() {
                     name="password"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Password</Label>
+                        <FormLabel>Password</FormLabel>
                         <FormControl>
                           <Input type="password" placeholder="••••••••" {...field} autoComplete="new-password" />
                         </FormControl>
