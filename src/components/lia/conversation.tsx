@@ -14,7 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAuth } from '@/hooks/use-auth';
 import type { Message } from '@/app/actions';
 import {
   getAiResponse,
@@ -35,7 +34,6 @@ type ConversationProps = {
 };
 
 export default function Conversation({ topic, onTopicChange }: ConversationProps) {
-  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: Date.now(),
@@ -59,7 +57,7 @@ export default function Conversation({ topic, onTopicChange }: ConversationProps
   }, [messages, isLoading]);
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !user || isLoading) return;
+    if (!inputValue.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now(),
@@ -98,7 +96,8 @@ export default function Conversation({ topic, onTopicChange }: ConversationProps
     setMessages((prev) => [...prev, aiMessage]);
     setIsLoading(false);
 
-    await saveConversation(user.uid, topic, [...updatedHistoryMessages, aiMessage]);
+    // Using a placeholder user ID since authentication is removed
+    await saveConversation('anonymous_user', topic, [...updatedHistoryMessages, aiMessage]);
   };
 
   return (
@@ -158,10 +157,6 @@ export default function Conversation({ topic, onTopicChange }: ConversationProps
                 </div>
                 {message.sender === 'user' && (
                   <Avatar className="h-8 w-8">
-                    <AvatarImage
-                      src={user?.photoURL || ''}
-                      alt={user?.displayName || 'user'}
-                    />
                     <AvatarFallback>
                       <User />
                     </AvatarFallback>
