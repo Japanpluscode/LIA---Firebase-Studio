@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Mic, Waves } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -10,16 +10,24 @@ import { useToast } from '@/hooks/use-toast';
 
 const topics = ['Travel', 'Food', 'Hobbies', 'Work', 'Technology'];
 
+// Silence detection parameters
+const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
+const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
+
 export default function Conversation() {
-  const [isRecording, setIsRecording] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [topic, setTopic] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const { toast } = useToast();
@@ -28,6 +36,123 @@ export default function Conversation() {
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
     setTopic(randomTopic);
   }, []);
+
+  const stopListening = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
+    setIsListening(false);
+  }, []);
+
+  const handleAiResponse = async (userMessage: Message) => {
+    const conversationHistory = [...messages, userMessage]
+      .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
+      .join('\n');
+
+    setIsAiSpeaking(true);
+    const aiText = await getAiResponse(topic, conversationHistory);
+    setIsAiSpeaking(false);
+
+    const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
+    setMessages((prev) => [...prev, aiMessage]);
+    
+    // For now, we are not playing the audio, but we'll get there.
+    console.log("AI says: ", aiText);
+
+    await saveConversation('anonymous_user', topic, [...messages, userMessage, aiMessage]);
+    
+    // After AI speaks, start listening again
+    startListening(); 
+  };
+
+
+  const startListening = useCallback(async () => {
+    if (isListening || isAiSpeaking) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      audioContextRef.current = new AudioContext();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 256;
+      source.connect(analyserRef.current);
+
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        setIsProcessing(true);
+        // For this prototype, we'll simulate speech-to-text with a placeholder user message.
+        const simulatedUserText = "I enjoy traveling to new places and trying different kinds of food.";
+
+        const userMessage: Message = {
+          id: Date.now(),
+          sender: 'user',
+          text: simulatedUserText,
+        };
+        
+        setMessages((prev) => [...prev, userMessage]);
+        
+        await handleAiResponse(userMessage);
+
+        setIsProcessing(false);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsListening(true);
+
+      // Start silence detection
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      
+      const checkSilence = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        const volume = dataArray.reduce((acc, val) => acc + Math.abs(val - 128), 0) / dataArray.length / 128;
+
+        if (volume < SILENCE_THRESHOLD) {
+          if (!silenceTimerRef.current) {
+            silenceTimerRef.current = setTimeout(() => {
+              stopListening();
+            }, SILENCE_DURATION);
+          }
+        } else {
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+        }
+        if (isListening) {
+          requestAnimationFrame(checkSilence);
+        }
+      };
+      checkSilence();
+
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Microphone Access Denied',
+        description: 'Please enable microphone permissions in your browser settings.',
+      });
+      setIsListening(false);
+    }
+  }, [isListening, isAiSpeaking, toast, stopListening]);
+
 
   const handleStartConversation = async () => {
     setIsProcessing(true);
@@ -38,79 +163,20 @@ export default function Conversation() {
     const aiMessage: Message = { id: Date.now(), sender: 'ai', text: firstAiText };
     setMessages([aiMessage]);
     
-    setIsProcessing(false);
+    setIsAiSpeaking(true);
+    // Simulate AI speaking time before listening starts
+    setTimeout(() => {
+      setIsAiSpeaking(false);
+      setIsProcessing(false);
+      startListening();
+    }, 2000);
   };
-  
-  const handleRecordClick = async () => {
-    if (!conversationStarted) {
-      await handleStartConversation();
-      return;
-    }
-
-    if (isRecording) {
-      if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
-        setIsProcessing(true); 
-      }
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorderRef.current = new MediaRecorder(stream);
-        audioChunksRef.current = [];
-
-        mediaRecorderRef.current.ondataavailable = (event) => {
-          audioChunksRef.current.push(event.data);
-        };
-
-        mediaRecorderRef.current.onstop = async () => {
-          // For this prototype, we'll simulate speech-to-text with a placeholder user message.
-          const simulatedUserText = "I enjoy traveling to new places and trying different kinds of food.";
-
-          const userMessage: Message = {
-            id: Date.now(),
-            sender: 'user',
-            text: simulatedUserText,
-          };
-          
-          setMessages((prev) => [...prev, userMessage]);
-
-          const conversationHistory = [...messages, userMessage]
-            .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
-            .join('\n');
-          
-          setIsAiSpeaking(true);
-          const aiText = await getAiResponse(topic, conversationHistory);
-          setIsAiSpeaking(false);
-          
-          const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
-          setMessages((prev) => [...prev, aiMessage]);
-
-          console.log("AI says: ", aiText);
-
-          setIsProcessing(false);
-          
-          await saveConversation('anonymous_user', topic, [...messages, userMessage, aiMessage]);
-        };
-
-        mediaRecorderRef.current.start();
-        setIsRecording(true);
-      } catch (error) {
-        console.error('Error accessing microphone:', error);
-        toast({
-          variant: 'destructive',
-          title: 'Microphone Access Denied',
-          description: 'Please enable microphone permissions in your browser settings.',
-        });
-      }
-    }
-  };
-
 
   const buttonState = () => {
     if (!conversationStarted) return 'start';
-    if (isProcessing || isAiSpeaking) return 'processing';
-    if (isRecording) return 'recording';
+    if (isProcessing) return 'processing';
+    if (isAiSpeaking) return 'speaking';
+    if (isListening) return 'listening';
     return 'idle';
   };
 
@@ -119,52 +185,47 @@ export default function Conversation() {
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
       <div className="relative mb-8">
-        <Avatar
+        <button
+          onClick={handleStartConversation}
+          disabled={conversationStarted || isProcessing}
           className={cn(
-            'h-48 w-48 md:h-64 md:w-64 border-4 border-primary/20 shadow-lg',
-            (isAiSpeaking || isProcessing) && 'animate-pulse'
+            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-4 border-primary/20',
+            {
+              'cursor-pointer hover:border-primary/40': !conversationStarted,
+              'cursor-not-allowed': conversationStarted,
+              'animate-pulse': isAiSpeaking || isProcessing
+            }
           )}
+          aria-label="Start Conversation"
         >
-          <AvatarImage src="https://i.imgur.com/3l3d5iS.png" alt="L.I.A. Avatar" />
-          <AvatarFallback>
-            <Bot className="h-24 w-24 text-primary" />
-          </AvatarFallback>
-        </Avatar>
+          <Avatar
+            className={cn('h-full w-full')}
+          >
+            <AvatarImage src="https://i.imgur.com/3l3d5iS.png" alt="L.I.A. Avatar" />
+            <AvatarFallback>
+              <Bot className="h-24 w-24 text-primary" />
+            </AvatarFallback>
+          </Avatar>
+        </button>
       </div>
-
-      <button
-        onClick={handleRecordClick}
-        disabled={isProcessing || isAiSpeaking}
-        className={cn(
-          'rounded-full w-24 h-24 md:w-28 md:h-28 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-          {
-            'bg-primary hover:bg-primary/90': currentButtonState === 'idle' || currentButtonState === 'start',
-            'bg-red-500 hover:bg-red-600 animate-pulse': currentButtonState === 'recording',
-            'bg-gray-400 cursor-not-allowed': currentButtonState === 'processing',
-          }
-        )}
-        aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
-      >
-        {currentButtonState === 'recording' && <Waves className="h-10 w-10 text-white" />}
-        {(currentButtonState === 'idle' || currentButtonState === 'start') && <Mic className="h-10 w-10 text-primary-foreground" />}
-        {currentButtonState === 'processing' && (
-           <div className="h-10 w-10">
-              <div className="h-3 w-3 bg-white rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-              <div className="h-3 w-3 bg-white rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-              <div className="h-3 w-3 bg-white rounded-full animate-pulse"></div>
+      
+       <div className="flex items-center justify-center h-16">
+          {currentButtonState === 'listening' && (
+            <div className="flex items-center space-x-2">
+              <Mic className="h-6 w-6 text-red-500 animate-pulse" />
+              <p className="text-muted-foreground">Listening...</p>
             </div>
-        )}
-      </button>
-       <p className="mt-6 text-muted-foreground text-center">
-        {
-          {
-            'start': 'Click the button to start the conversation.',
-            'idle': 'Click to speak.',
-            'recording': 'Recording...',
-            'processing': 'L.I.A. is thinking...'
-          }[currentButtonState]
-        }
-      </p>
+          )}
+          {(currentButtonState === 'speaking' || currentButtonState === 'processing') && (
+            <div className="flex items-center space-x-2">
+              <Waves className="h-6 w-6 text-primary" />
+              <p className="text-muted-foreground">L.I.A. is thinking...</p>
+            </div>
+          )}
+          {currentButtonState === 'start' && (
+             <p className="text-muted-foreground">Click the avatar to start the conversation.</p>
+          )}
+      </div>
       
       <audio ref={audioPlayerRef} hidden />
     </div>
