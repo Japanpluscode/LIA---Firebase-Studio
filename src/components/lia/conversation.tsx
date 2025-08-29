@@ -202,7 +202,7 @@ export default function Conversation() {
           aria-label="Start Conversation"
         >
           <Image
-            src="https://i.imgur.com/rS2a4z0.png"
+            src="https://i.ibb.co/R4WTd2z/OIG3-T0-Yl-ICl-H.png"
             alt="L.I.A. Avatar"
             fill
             className="object-cover"
