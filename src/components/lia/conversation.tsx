@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { getAiResponse, saveConversation } from '@/app/actions';
 import type { Message } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image';
 
 const topics = ['Travel', 'Food', 'Hobbies', 'Work', 'Technology'];
 
@@ -188,7 +189,7 @@ export default function Conversation() {
           onClick={handleStartConversation}
           disabled={currentButtonState !== 'start'}
           className={cn(
-            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
             'bg-cover bg-center',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start',
@@ -197,11 +198,17 @@ export default function Conversation() {
             }
           )}
           style={{
-             backgroundImage: "url('https://i.imgur.com/rS2a4z0.png')",
              boxShadow: '0 0 20px 5px hsla(var(--primary) / 0.5), 0 0 40px 10px hsla(var(--primary) / 0.3)',
           }}
           aria-label="Start Conversation"
         >
+          <Image
+            src="https://i.imgur.com/rS2a4z0.png"
+            alt="L.I.A. Avatar"
+            fill
+            className="object-cover"
+            priority
+          />
         </button>
       </div>
       
