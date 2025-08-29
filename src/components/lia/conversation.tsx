@@ -204,8 +204,8 @@ export default function Conversation() {
           <Image
             src="https://i.ibb.co/R4WTd2z/OIG3-T0-Yl-ICl-H.png"
             alt="L.I.A. Avatar"
-            fill
-            sizes="(max-width: 768px) 192px, 256px"
+            width={256}
+            height={256}
             className="object-cover"
             priority
           />
