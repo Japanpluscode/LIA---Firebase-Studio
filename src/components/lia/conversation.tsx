@@ -189,7 +189,7 @@ export default function Conversation() {
           onClick={handleStartConversation}
           disabled={currentButtonState !== 'start'}
           className={cn(
-            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
+            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
             'bg-cover bg-center',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start',
