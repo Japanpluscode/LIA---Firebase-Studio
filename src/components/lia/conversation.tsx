@@ -198,8 +198,8 @@ export default function Conversation() {
             }
           )}
           style={{
-             backgroundImage: "url('https://i.imgur.com/g4t9C3C.png')",
-             boxShadow: '0 0 20px 5px rgba(139, 92, 246, 0.5), 0 0 40px 10px rgba(37, 99, 235, 0.3)',
+             backgroundImage: "url('https://i.imgur.com/rS2a4z0.png')",
+             boxShadow: '0 0 20px 5px hsla(var(--primary) / 0.5), 0 0 40px 10px hsla(var(--primary) / 0.3)',
           }}
           aria-label="Start Conversation"
         >
