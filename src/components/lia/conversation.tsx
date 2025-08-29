@@ -151,7 +151,7 @@ export default function Conversation() {
       });
       setIsListening(false);
     }
-  }, [isListening, isAiSpeaking, toast, stopListening]);
+  }, [isListening, isAiSpeaking, toast, stopListening, messages, topic]);
 
 
   const handleStartConversation = async () => {
@@ -189,41 +189,45 @@ export default function Conversation() {
           onClick={handleStartConversation}
           disabled={conversationStarted || isProcessing}
           className={cn(
-            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-4 border-primary/20',
+            'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'bg-gradient-to-br from-purple-500 to-blue-600',
             {
-              'cursor-pointer hover:border-primary/40': !conversationStarted,
-              'cursor-not-allowed': conversationStarted,
-              'animate-pulse': isAiSpeaking || isProcessing
+              'cursor-pointer hover:from-purple-600 hover:to-blue-700': !conversationStarted,
+              'cursor-not-allowed opacity-80': conversationStarted,
+              'animate-pulse-strong': isAiSpeaking || isProcessing || isListening
             }
           )}
+          style={{
+             boxShadow: '0 0 20px 5px rgba(139, 92, 246, 0.5), 0 0 40px 10px rgba(37, 99, 235, 0.3)',
+          }}
           aria-label="Start Conversation"
         >
           <Avatar
-            className={cn('h-full w-full')}
+            className={cn('h-[95%] w-[95%]')}
           >
             <AvatarImage src="https://i.imgur.com/3l3d5iS.png" alt="L.I.A. Avatar" />
             <AvatarFallback>
-              <Bot className="h-24 w-24 text-primary" />
+              <Bot className="h-24 w-24 text-primary-foreground" />
             </AvatarFallback>
           </Avatar>
         </button>
       </div>
       
-       <div className="flex items-center justify-center h-16">
+       <div className="flex items-center justify-center h-16 text-center">
           {currentButtonState === 'listening' && (
             <div className="flex items-center space-x-2">
-              <Mic className="h-6 w-6 text-red-500 animate-pulse" />
-              <p className="text-muted-foreground">Listening...</p>
+              <Mic className="h-6 w-6 text-red-400" />
+              <p className="text-lg font-medium text-gray-300">Listening...</p>
             </div>
           )}
           {(currentButtonState === 'speaking' || currentButtonState === 'processing') && (
             <div className="flex items-center space-x-2">
-              <Waves className="h-6 w-6 text-primary" />
-              <p className="text-muted-foreground">L.I.A. is thinking...</p>
+              <Waves className="h-6 w-6 text-blue-400" />
+              <p className="text-lg font-medium text-gray-300">L.I.A. is thinking...</p>
             </div>
           )}
           {currentButtonState === 'start' && (
-             <p className="text-muted-foreground">Click the avatar to start the conversation.</p>
+             <p className="text-lg font-medium text-gray-300">Click the avatar to start the conversation.</p>
           )}
       </div>
       
