@@ -8,7 +8,6 @@ import { getAiResponse, saveConversation } from '@/app/actions';
 import type { Message } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 
-// List of topics for the AI to choose from
 const topics = ['Travel', 'Food', 'Hobbies', 'Work', 'Technology'];
 
 export default function Conversation() {
@@ -25,7 +24,6 @@ export default function Conversation() {
 
   const { toast } = useToast();
 
-  // Pick a random topic when the component mounts
   useEffect(() => {
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
     setTopic(randomTopic);
@@ -35,14 +33,11 @@ export default function Conversation() {
     setIsProcessing(true);
     setConversationStarted(true);
     
-    // The AI starts the conversation
     const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${topic}. To start, tell me what you enjoy about this topic.`;
 
     const aiMessage: Message = { id: Date.now(), sender: 'ai', text: firstAiText };
     setMessages([aiMessage]);
     
-    // For now, we are not playing audio for the first message to simplify the flow.
-    // This can be added later.
     setIsProcessing(false);
   };
   
@@ -53,14 +48,12 @@ export default function Conversation() {
     }
 
     if (isRecording) {
-      // Stop recording
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
-        setIsProcessing(true); // Show processing indicator
+        setIsProcessing(true); 
       }
     } else {
-      // Start recording
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorderRef.current = new MediaRecorder(stream);
@@ -71,9 +64,7 @@ export default function Conversation() {
         };
 
         mediaRecorderRef.current.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          // Here you would typically send the audio to a speech-to-text service.
-          // For this prototype, we'll simulate it with a placeholder user message.
+          // For this prototype, we'll simulate speech-to-text with a placeholder user message.
           const simulatedUserText = "I enjoy traveling to new places and trying different kinds of food.";
 
           const userMessage: Message = {
@@ -84,7 +75,6 @@ export default function Conversation() {
           
           setMessages((prev) => [...prev, userMessage]);
 
-          // Get AI response
           const conversationHistory = [...messages, userMessage]
             .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
             .join('\n');
@@ -96,8 +86,6 @@ export default function Conversation() {
           const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
           setMessages((prev) => [...prev, aiMessage]);
 
-          // Simulate playing AI audio response.
-          // In a real app, this would be a text-to-speech service call.
           console.log("AI says: ", aiText);
 
           setIsProcessing(false);
