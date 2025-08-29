@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Bot, Mic, Waves } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Mic, Waves } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAiResponse, saveConversation } from '@/app/actions';
 import type { Message } from '@/app/actions';
@@ -187,14 +186,14 @@ export default function Conversation() {
       <div className="relative mb-8">
         <button
           onClick={handleStartConversation}
-          disabled={conversationStarted || isProcessing}
+          disabled={currentButtonState !== 'start'}
           className={cn(
             'rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             'bg-cover bg-center',
             {
-              'cursor-pointer hover:opacity-90': !conversationStarted,
-              'cursor-not-allowed opacity-80': conversationStarted,
-              'animate-pulse-strong': isAiSpeaking || isProcessing || isListening
+              'cursor-pointer hover:opacity-90': currentButtonState === 'start',
+              'cursor-not-allowed opacity-80': currentButtonState !== 'start',
+              'animate-pulse-strong': currentButtonState === 'speaking' || currentButtonState === 'processing' || currentButtonState === 'listening'
             }
           )}
           style={{
