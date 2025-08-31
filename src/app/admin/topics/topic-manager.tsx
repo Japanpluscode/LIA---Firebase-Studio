@@ -139,7 +139,7 @@ export default function TopicManager({users}: {users: User[]}) {
           >
             Select Student
           </label>
-          <Select onValuechange={handleUserChange} value={selectedUserId}>
+          <Select onValueChange={handleUserChange} value={selectedUserId}>
             <SelectTrigger id="user-select" className="w-full bg-input">
               <SelectValue placeholder="Select a student..." />
             </SelectTrigger>
