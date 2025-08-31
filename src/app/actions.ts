@@ -106,10 +106,9 @@ export async function saveConversation(
   if (
     !messages ||
     messages.length === 0 ||
-    !userId ||
-    userId === 'anonymous_user'
+    !userId
   ) {
-    console.log('Skipping save for anonymous or empty conversation.');
+    console.log('Skipping save for empty conversation.');
     return;
   }
   try {
@@ -134,7 +133,7 @@ export async function saveConversation(
 }
 
 export async function getRandomTopic(userId: string): Promise<string> {
-  if (!userId || userId === 'anonymous_user') {
+  if (!userId) {
     const defaultTopics = [
       'General Conversation',
       'Travel',

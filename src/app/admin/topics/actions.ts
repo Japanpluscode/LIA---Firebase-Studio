@@ -22,7 +22,7 @@ export async function getUsers() {
     const users = usersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-    })) as {id: string; name: string; profile: string}[];
+    })) as {id: string; name: string; email: string; profile: string}[];
     return users;
   } catch (error) {
     console.error('Error getting users:', error);
@@ -34,7 +34,7 @@ export async function getUser(userId: string) {
    try {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (userDoc.exists()) {
-      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, profile: string};
+      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, email: string, profile: string};
     }
     return null;
   } catch (error) {
@@ -43,17 +43,41 @@ export async function getUser(userId: string) {
   }
 }
 
-export async function addUser(name: string, profile: string) {
-  if (!name || name.trim() === '') {
-    return {error: 'User name cannot be empty.'};
+export async function getUserByEmail(email: string) {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email.toLowerCase()));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0];
+      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, email: string, profile: string};
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting user by email:', error);
+    return null;
   }
+}
+
+
+export async function addUser(name: string, email: string, profile: string) {
+  if (!name || name.trim() === '' || !email || email.trim() === '') {
+    return {error: 'User name and email cannot be empty.'};
+  }
+  // Check if user with email already exists
+  const existingUser = await getUserByEmail(email);
+  if (existingUser) {
+    return { error: 'A user with this email already exists.' };
+  }
+
   try {
     const docRef = await addDoc(collection(db, 'users'), {
       name: name.trim(),
+      email: email.trim().toLowerCase(),
       profile: profile.trim(),
     });
     revalidatePath('/admin/topics');
-    return {success: true, newUser: {id: docRef.id, name: name.trim(), profile: profile.trim()}};
+    return {success: true, newUser: {id: docRef.id, name: name.trim(), email: email.trim().toLowerCase(), profile: profile.trim()}};
   } catch (error) {
     console.error('Error adding user:', error);
     return {error: 'Failed to add user.'};

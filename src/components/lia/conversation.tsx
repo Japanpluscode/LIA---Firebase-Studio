@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Waves } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getAiResponse, saveConversation, getRandomTopic } from '@/app/actions';
-import type { Message } from '@/app/actions';
+import { getAiResponse, saveConversation, getRandomTopic, Message } from '@/app/actions';
+import { textToSpeech } from '@/ai/flows/tts';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
 
@@ -12,14 +12,13 @@ import Image from 'next/image';
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
 const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
 
-export default function Conversation() {
+export default function Conversation({ userId, userName }: { userId: string; userName: string }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [topic, setTopic] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [userId, setUserId] = useState('anonymous_user'); // Hardcoded for now
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -154,13 +153,10 @@ export default function Conversation() {
     setIsProcessing(true);
     setConversationStarted(true);
     
-    const testUserId = 'user_1';
-    setUserId(testUserId);
-    
-    const randomTopic = await getRandomTopic(testUserId);
+    const randomTopic = await getRandomTopic(userId);
     setTopic(randomTopic);
 
-    const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;
+    const firstAiText = `Hello ${userName}! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;
 
     const { audio } = await textToSpeech(firstAiText);
     
@@ -206,12 +202,12 @@ export default function Conversation() {
     <div className="flex flex-col items-center justify-center w-full h-full">
       <div className="relative mb-8">
         <button
-          onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : undefined)}
+          onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : startListening)}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
             'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
             {
-              'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening',
+              'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening' || currentButtonState === 'idle',
               'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
               'animate-pulse-strong': currentButtonState === 'speaking' || currentButtonState === 'processing' || currentButtonState === 'listening'
             }

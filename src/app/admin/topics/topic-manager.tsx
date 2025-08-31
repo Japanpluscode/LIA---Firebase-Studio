@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 type User = {
   id: string;
   name: string;
+  email?: string;
   profile?: string;
 };
 
@@ -28,6 +29,7 @@ export default function TopicManager({users}: {users: User[]}) {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [newTopicName, setNewTopicName] = useState('');
   const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserProfile, setNewUserProfile] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isAddingUser, startAddingUserTransition] = useTransition();
@@ -59,13 +61,14 @@ export default function TopicManager({users}: {users: User[]}) {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim()) return;
+    if (!newUserName.trim() || !newUserEmail.trim()) return;
 
     startAddingUserTransition(async () => {
-      const result = await addUser(newUserName, newUserProfile);
+      const result = await addUser(newUserName, newUserEmail, newUserProfile);
       if (result.success && result.newUser) {
         setCurrentUsers(prev => [...prev, result.newUser!]);
         setNewUserName('');
+        setNewUserEmail('');
         setNewUserProfile('');
       }
       // TODO: Handle error case with a toast
@@ -93,6 +96,19 @@ export default function TopicManager({users}: {users: User[]}) {
               />
             </div>
             <div className='grid gap-2'>
+               <Label htmlFor="userEmail">Student Email</Label>
+               <Input
+                id="userEmail"
+                name="userEmail"
+                type="email"
+                placeholder="Enter student's email"
+                className="bg-input text-foreground placeholder:text-muted-foreground"
+                value={newUserEmail}
+                onChange={e => setNewUserEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className='grid gap-2'>
               <Label htmlFor="userProfile">Student Profile & Preferences</Label>
               <Textarea
                 id="userProfile"
@@ -106,7 +122,7 @@ export default function TopicManager({users}: {users: User[]}) {
 
             <Button
               type="submit"
-              disabled={isAddingUser || !newUserName.trim()}
+              disabled={isAddingUser || !newUserName.trim() || !newUserEmail.trim()}
               className="w-fit"
             >
               {isAddingUser ? 'Adding...' : 'Add Student'}
@@ -123,14 +139,14 @@ export default function TopicManager({users}: {users: User[]}) {
           >
             Select Student
           </label>
-          <Select onValueChange={handleUserChange} value={selectedUserId}>
+          <Select onValuechange={handleUserChange} value={selectedUserId}>
             <SelectTrigger id="user-select" className="w-full bg-input">
               <SelectValue placeholder="Select a student..." />
             </SelectTrigger>
             <SelectContent>
               {currentUsers.map(user => (
                 <SelectItem key={user.id} value={user.id}>
-                  {user.name}
+                  {user.name} ({user.email})
                 </SelectItem>
               ))}
             </SelectContent>
