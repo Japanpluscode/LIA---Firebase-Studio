@@ -1,4 +1,4 @@
-import { getTopics, addTopic, deleteTopic } from './actions';
+import { getTopics, addTopic, deleteTopic, toggleTopic } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -9,6 +9,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 export default async function TopicsAdminPage() {
   const topics = await getTopics();
@@ -20,7 +22,8 @@ export default async function TopicsAdminPage() {
           <CardHeader>
             <CardTitle>Manage Conversation Topics</CardTitle>
             <CardDescription>
-              Add or remove topics that L.I.A. can use to start conversations.
+              Add, remove, or toggle topics for the user. Only enabled topics
+              will be used in conversations.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -52,21 +55,51 @@ export default async function TopicsAdminPage() {
                 className="flex items-center justify-between p-4 bg-card text-card-foreground"
               >
                 <span className="font-medium">{topic.name}</span>
-                <form
-                  action={async () => {
-                    'use server';
-                    await deleteTopic(topic.id);
-                  }}
-                >
-                  <Button variant="ghost" size="icon" type="submit">
-                    <Trash2 className="h-5 w-5 text-destructive" />
-                    <span className="sr-only">Delete topic</span>
-                  </Button>
-                </form>
+                <div className="flex items-center gap-4">
+                  <form
+                    action={async () => {
+                      'use server';
+                      await toggleTopic(topic.id, topic.enabled);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Label
+                      htmlFor={`topic-toggle-${topic.id}`}
+                      className="text-sm text-muted-foreground"
+                    >
+                      {topic.enabled ? 'Enabled' : 'Disabled'}
+                    </Label>
+                    <Switch
+                      id={`topic-toggle-${topic.id}`}
+                      checked={topic.enabled}
+                      onCheckedChange={e => {
+                        // The form submission handles the action, but this makes the UI feel instant.
+                        // We're effectively submitting the form on change.
+                        const form = (e.target as HTMLElement).closest(
+                          'form'
+                        );
+                        form?.requestSubmit();
+                      }}
+                    />
+                  </form>
+                  <form
+                    action={async () => {
+                      'use server';
+                      await deleteTopic(topic.id);
+                    }}
+                  >
+                    <Button variant="ghost" size="icon" type="submit">
+                      <Trash2 className="h-5 w-5 text-destructive" />
+                      <span className="sr-only">Delete topic</span>
+                    </Button>
+                  </form>
+                </div>
               </Card>
             ))
           ) : (
-            <p className="text-muted-foreground">No topics found. Add one above to get started.</p>
+            <p className="text-muted-foreground">
+              No topics found. Add one above to get started.
+            </p>
           )}
         </div>
       </div>
