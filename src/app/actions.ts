@@ -75,42 +75,20 @@ export async function saveConversation(
       conversationHistory,
     });
 
-    await addDoc(collection(db, 'users', userId, 'conversations'), {
-      topic,
-      messages: messages.map(({ id, ...rest }) => rest),
-      feedback: feedbackResult.feedback,
-      createdAt: serverTimestamp(),
-    });
+    // Temporarily disable Firestore call
+    // await addDoc(collection(db, 'users', userId, 'conversations'), {
+    //   topic,
+    //   messages: messages.map(({ id, ...rest }) => rest),
+    //   feedback: feedbackResult.feedback,
+    //   createdAt: serverTimestamp(),
+    // });
+    console.log('Conversation saving is temporarily disabled.');
   } catch (error) {
     console.error('Error saving conversation:', error);
   }
 }
 
 export async function getRandomTopic(): Promise<string> {
-  const defaultTopic = 'General Conversation';
-  try {
-    // Hardcoded user for now, this would come from an auth system.
-    const userId = 'anonymous_user';
-    const topicsRef = collection(db, 'users', userId, 'topics');
-    const q = query(topicsRef, where('enabled', '==', true));
-
-    const topicsSnapshot = await getDocs(q);
-
-    if (topicsSnapshot.empty) {
-      // If no enabled topics, check for any topics at all
-      const allTopicsSnapshot = await getDocs(topicsRef);
-      if (allTopicsSnapshot.empty) {
-        // If no topics exist for the user, create a default one
-        await addDoc(topicsRef, { name: defaultTopic, enabled: true });
-        return defaultTopic;
-      }
-      return defaultTopic; // Return default if no topics are enabled
-    }
-
-    const topics = topicsSnapshot.docs.map(doc => doc.data().name);
-    return topics[Math.floor(Math.random() * topics.length)];
-  } catch (error) {
-    console.error('Error fetching topics:', error);
-    return defaultTopic;
-  }
+  const defaultTopics = ['General Conversation', 'Travel', 'Food', 'Technology'];
+  return defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
 }

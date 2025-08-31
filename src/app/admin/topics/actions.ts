@@ -16,16 +16,16 @@ import { revalidatePath } from 'next/cache';
 // Hardcoded user for now, this would come from an auth system.
 const userId = 'anonymous_user';
 
+// Placeholder data since Firestore is not connected
+let placeholderTopics = [
+  { id: '1', name: 'Travel', enabled: true },
+  { id: '2', name: 'Food', enabled: true },
+  { id: '3', name: 'Hobbies', enabled: false },
+];
+
 export async function getTopics() {
-  const topicsSnapshot = await getDocs(
-    collection(db, 'users', userId, 'topics')
-  );
-  const topics = topicsSnapshot.docs.map(doc => ({
-    id: doc.id,
-    name: doc.data().name,
-    enabled: doc.data().enabled ?? false,
-  }));
-  return topics;
+  // Return placeholder data instead of calling Firestore
+  return placeholderTopics;
 }
 
 export async function addTopic(topicName: string) {
@@ -33,10 +33,13 @@ export async function addTopic(topicName: string) {
     return { error: 'Topic name cannot be empty.' };
   }
   try {
-    await addDoc(collection(db, 'users', userId, 'topics'), {
+    // Add to placeholder data
+    const newTopic = {
+      id: (placeholderTopics.length + 1).toString(),
       name: topicName.trim(),
-      enabled: true, // Newly added topics are enabled by default
-    });
+      enabled: true,
+    };
+    placeholderTopics.push(newTopic);
     revalidatePath('/admin/topics');
     return { success: true };
   } catch (error) {
@@ -47,7 +50,8 @@ export async function addTopic(topicName: string) {
 
 export async function deleteTopic(topicId: string) {
   try {
-    await deleteDoc(doc(db, 'users', userId, 'topics', topicId));
+    // Delete from placeholder data
+    placeholderTopics = placeholderTopics.filter(topic => topic.id !== topicId);
     revalidatePath('/admin/topics');
     return { success: true };
   } catch (error) {
@@ -58,9 +62,11 @@ export async function deleteTopic(topicId: string) {
 
 export async function toggleTopic(topicId: string, currentState: boolean) {
   try {
-    await updateDoc(doc(db, 'users', userId, 'topics', topicId), {
-      enabled: !currentState,
-    });
+    // Update placeholder data
+    const topic = placeholderTopics.find(topic => topic.id === topicId);
+    if (topic) {
+      topic.enabled = !currentState;
+    }
     revalidatePath('/admin/topics');
     return { success: true };
   } catch (error) {
