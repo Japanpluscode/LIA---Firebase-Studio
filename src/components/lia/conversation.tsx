@@ -3,12 +3,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Waves } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getAiResponse, saveConversation } from '@/app/actions';
+import { getAiResponse, saveConversation, getRandomTopic } from '@/app/actions';
 import type { Message } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
-
-const topics = ['Travel', 'Food', 'Hobbies', 'Work', 'Technology'];
 
 // Silence detection parameters
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
@@ -32,11 +30,6 @@ export default function Conversation() {
 
   const { toast } = useToast();
 
-  useEffect(() => {
-    const randomTopic = topics[Math.floor(Math.random() * topics.length)];
-    setTopic(randomTopic);
-  }, []);
-
   const stopListening = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
@@ -55,7 +48,10 @@ export default function Conversation() {
   }, []);
 
   const handleAiResponse = async (userMessage: Message) => {
-    const conversationHistory = [...messages, userMessage]
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+
+    const conversationHistory = updatedMessages
       .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
       .join('\n');
 
@@ -66,10 +62,11 @@ export default function Conversation() {
     const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
     setMessages((prev) => [...prev, aiMessage]);
     
-    // For now, we are not playing the audio, but we'll get there.
     console.log("AI says: ", aiText);
 
-    await saveConversation('anonymous_user', topic, [...messages, userMessage, aiMessage]);
+    // Hardcoded user for now, this would come from an auth system.
+    const userId = 'anonymous_user';
+    await saveConversation(userId, topic, [...updatedMessages, aiMessage]);
     
     // After AI speaks, start listening again
     startListening(); 
@@ -105,8 +102,6 @@ export default function Conversation() {
           sender: 'user',
           text: simulatedUserText,
         };
-        
-        setMessages((prev) => [...prev, userMessage]);
         
         await handleAiResponse(userMessage);
 
@@ -158,7 +153,10 @@ export default function Conversation() {
     setIsProcessing(true);
     setConversationStarted(true);
     
-    const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${topic}. To start, tell me what you enjoy about this topic.`;
+    const randomTopic = await getRandomTopic();
+    setTopic(randomTopic);
+
+    const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;
 
     const aiMessage: Message = { id: Date.now(), sender: 'ai', text: firstAiText };
     setMessages([aiMessage]);

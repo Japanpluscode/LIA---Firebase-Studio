@@ -2,8 +2,9 @@
 
 import { dynamicQuestionSelection } from '@/ai/flows/dynamic-question-selection';
 import { correctGrammar } from '@/ai/flows/grammar-correction';
+import { generateFeedback } from '@/ai/flows/generate-feedback';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 
 export type Message = {
   sender: 'user' | 'ai';
@@ -21,7 +22,6 @@ export async function getAiResponse(topic: string, conversationHistory: string) 
 
     if(lastUserMessage.startsWith("Student: ")) {
       const userText = lastUserMessage.substring("Student: ".length);
-      // Corrected the function call here
       const correctionResult = await getGrammarCorrection(userText);
       
       if (correctionResult.correctedText.toLowerCase() !== userText.toLowerCase()) {
@@ -58,13 +58,37 @@ export async function saveConversation(
 ) {
   if (!messages || messages.length === 0) return;
   try {
-    await addDoc(collection(db, 'conversations'), {
-      userId,
+    const conversationHistory = messages
+      .map(msg => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
+      .join('\n');
+
+    const feedbackResult = await generateFeedback({
+      topic,
+      conversationHistory,
+    });
+
+    await addDoc(collection(db, 'users', userId, 'conversations'), {
       topic,
       messages: messages.map(({ id, ...rest }) => rest),
+      feedback: feedbackResult.feedback,
       createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Error saving conversation:', error);
+  }
+}
+
+export async function getRandomTopic(): Promise<string> {
+  try {
+    const topicsSnapshot = await getDocs(collection(db, 'topics'));
+    if (topicsSnapshot.empty) {
+      return 'General Conversation';
+    }
+    const topics = topicsSnapshot.docs.map(doc => doc.data().name);
+    return topics[Math.floor(Math.random() * topics.length)];
+  } catch (error) {
+    console.error('Error fetching topics:', error);
+    // Fallback to a default topic if Firestore is unavailable
+    return 'Travel';
   }
 }
