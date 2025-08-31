@@ -87,9 +87,6 @@ export async function saveConversation(
 }
 
 export async function getRandomTopic(): Promise<string> {
-  const defaultTopics = ['General Conversation', 'Travel', 'Food'];
-  return defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
-  /*
   const defaultTopic = 'General Conversation';
   try {
     // Hardcoded user for now, this would come from an auth system.
@@ -116,5 +113,4 @@ export async function getRandomTopic(): Promise<string> {
     console.error('Error fetching topics:', error);
     return defaultTopic;
   }
-  */
 }
