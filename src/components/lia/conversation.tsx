@@ -202,11 +202,13 @@ export default function Conversation() {
           aria-label="Start Conversation"
         >
           <Image
-            src="https://i.ibb.co/R4WTd2z/OIG3-T0-Yl-ICl-H.png"
+            src="https://picsum.photos/256/256"
             alt="L.I.A. Avatar"
-            fill
-            unoptimized
+            width={256}
+            height={256}
             className="object-cover rounded-full"
+            data-ai-hint="logo abstract"
+            priority
           />
         </button>
       </div>
