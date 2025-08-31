@@ -38,6 +38,26 @@ export async function getUsers() {
   return placeholderUsers.map(u => ({ id: u.id, name: u.name }));
 }
 
+export async function addUser(name: string) {
+  if (!name || name.trim() === '') {
+    return { error: 'User name cannot be empty.' };
+  }
+  try {
+    const newId = `user_${Date.now()}`;
+    const newUser = {
+      id: newId,
+      name: name.trim(),
+      topics: [],
+    };
+    placeholderUsers.push(newUser);
+    revalidatePath('/admin/topics');
+    return { success: true, newUser: {id: newUser.id, name: newUser.name} };
+  } catch (error) {
+    console.error('Error adding user:', error);
+    return { error: 'Failed to add user.' };
+  }
+}
+
 export async function getTopics(userId: string) {
   // Return placeholder data for a specific user
   const user = placeholderUsers.find(u => u.id === userId);

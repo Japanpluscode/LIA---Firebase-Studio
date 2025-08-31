@@ -16,10 +16,9 @@ export default async function TopicsAdminPage() {
       <div className="max-w-4xl mx-auto">
         <Card className="mb-8 bg-card text-card-foreground">
           <CardHeader>
-            <CardTitle>Manage Conversation Topics</CardTitle>
+            <CardTitle>Manage Students and Topics</CardTitle>
             <CardDescription>
-              Select a student to manage their topics. Only enabled topics will
-              be used in conversations.
+              Add students, then select a student to manage their conversation topics.
             </CardDescription>
           </CardHeader>
           <CardContent>

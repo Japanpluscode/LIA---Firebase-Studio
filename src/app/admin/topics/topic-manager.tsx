@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { getTopics, addTopic } from './actions';
+import { getTopics, addTopic, addUser } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import TopicList, { Topic } from './topic-list';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type User = {
   id: string;
@@ -19,10 +20,13 @@ type User = {
 };
 
 export default function TopicManager({ users }: { users: User[] }) {
+  const [currentUsers, setCurrentUsers] = useState<User[]>(users);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [topics, setTopics] = useState<Topic[]>([]);
   const [newTopicName, setNewTopicName] = useState('');
+  const [newUserName, setNewUserName] = useState('');
   const [isPending, startTransition] = useTransition();
+  const [isAddingUser, startAddingUserTransition] = useTransition();
 
   const handleUserChange = (userId: string) => {
     setSelectedUserId(userId);
@@ -48,9 +52,45 @@ export default function TopicManager({ users }: { users: User[] }) {
       setTopics(userTopics);
     });
   };
+  
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName.trim()) return;
+
+    startAddingUserTransition(async () => {
+      const result = await addUser(newUserName);
+      if (result.success && result.newUser) {
+        setCurrentUsers(prev => [...prev, result.newUser!]);
+        setNewUserName('');
+      }
+      // TODO: Handle error case with a toast
+    });
+  };
+
 
   return (
     <div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Add New Student</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleAddUser} className="flex gap-2">
+            <Input
+              name="userName"
+              placeholder="Enter new student name"
+              className="bg-input text-foreground placeholder:text-muted-foreground"
+              value={newUserName}
+              onChange={(e) => setNewUserName(e.target.value)}
+              required
+            />
+            <Button type="submit" disabled={isAddingUser || !newUserName.trim()}>
+              {isAddingUser ? 'Adding...' : 'Add Student'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="flex-1">
           <label htmlFor="user-select" className="block text-sm font-medium mb-2">
@@ -61,7 +101,7 @@ export default function TopicManager({ users }: { users: User[] }) {
               <SelectValue placeholder="Select a student..." />
             </SelectTrigger>
             <SelectContent>
-              {users.map(user => (
+              {currentUsers.map(user => (
                 <SelectItem key={user.id} value={user.id}>
                   {user.name}
                 </SelectItem>
