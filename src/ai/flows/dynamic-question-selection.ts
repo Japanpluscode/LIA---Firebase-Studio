@@ -15,13 +15,14 @@ import {z} from 'genkit';
 const DynamicQuestionSelectionInputSchema = z.object({
   topic: z.string().describe('The current conversation topic.'),
   conversationHistory: z.string().describe('The history of the conversation so far.'),
+  studentContext: z.string().describe('A summary of past conversations to provide context about the student.')
 });
 export type DynamicQuestionSelectionInput = z.infer<
   typeof DynamicQuestionSelectionInputSchema
 >;
 
 const DynamicQuestionSelectionOutputSchema = z.object({
-  nextQuestion: z.string().describe('The next question to ask the student.'),
+  nextResponse: z.string().describe('The next response to the student, which could be a question, a comment, or a follow-up statement.'),
 });
 export type DynamicQuestionSelectionOutput = z.infer<
   typeof DynamicQuestionSelectionOutputSchema
@@ -37,15 +38,20 @@ const prompt = ai.definePrompt({
   name: 'dynamicQuestionSelectionPrompt',
   input: {schema: DynamicQuestionSelectionInputSchema},
   output: {schema: DynamicQuestionSelectionOutputSchema},
-  prompt: `You are an AI language learning assistant named L.I.A. You are friendly, encouraging, and conversational.
+  prompt: `You are an AI language learning assistant named L.I.A. You are friendly, encouraging, and conversational. Your goal is to engage the student in a natural, flowing conversation. Do not just ask a series of questions. Make comments, share your own (fictional) thoughts, and react to what the student says.
 
-  Based on the current topic and the conversation history, suggest the next question to ask the student.
-  The goal is to keep the student engaged and challenged, while staying relevant to the topic.
+  CRITICAL: You must NEVER, under any circumstances, change the conversation topic. The conversation MUST remain strictly about the provided topic.
+
+  You have access to a summary of the student's past conversations. Use this to remember things about the student and make the conversation more personal.
+
+  Student Context (from past conversations):
+  {{{studentContext}}}
 
   Current Topic: {{{topic}}}
-  Conversation History: {{{conversationHistory}}}
+  Current Conversation History:
+  {{{conversationHistory}}}
 
-  Next Question:`, // No function calls, no complex logic.
+  Your Next Conversational Response:`,
 });
 
 const dynamicQuestionSelectionFlow = ai.defineFlow(

@@ -19,6 +19,7 @@ export default function Conversation() {
   const [isListening, setIsListening] = useState(false);
   const [topic, setTopic] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [userId, setUserId] = useState('anonymous_user'); // Hardcoded for now
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -51,22 +52,17 @@ export default function Conversation() {
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
 
-    const conversationHistory = updatedMessages
-      .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
-      .join('\n');
-
     setIsAiSpeaking(true);
-    const aiText = await getAiResponse(topic, conversationHistory);
+    const aiText = await getAiResponse(userId, topic, updatedMessages);
     setIsAiSpeaking(false);
 
     const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
-    setMessages((prev) => [...prev, aiMessage]);
+    const finalMessages = [...updatedMessages, aiMessage];
+    setMessages(finalMessages);
     
     console.log("AI says: ", aiText);
 
-    // Hardcoded user for now, this would come from an auth system.
-    const userId = 'anonymous_user';
-    await saveConversation(userId, topic, [...updatedMessages, aiMessage]);
+    await saveConversation(userId, topic, finalMessages);
     
     // After AI speaks, start listening again
     startListening(); 
@@ -146,14 +142,19 @@ export default function Conversation() {
       });
       setIsListening(false);
     }
-  }, [isListening, isAiSpeaking, toast, stopListening, messages, topic]);
+  }, [isListening, isAiSpeaking, toast, stopListening, messages, topic, userId]);
 
 
   const handleStartConversation = async () => {
     setIsProcessing(true);
     setConversationStarted(true);
     
-    const randomTopic = await getRandomTopic();
+    // In a real app, you'd get this from your auth system.
+    // For now, we can switch to a "real" user for testing storage.
+    const testUserId = 'user_1'; // Let's use the first user from our placeholder data
+    setUserId(testUserId);
+    
+    const randomTopic = await getRandomTopic(testUserId);
     setTopic(randomTopic);
 
     const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;

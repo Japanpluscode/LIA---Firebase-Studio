@@ -10,7 +10,8 @@ import {
   serverTimestamp,
   getDocs,
   query,
-  where,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 
 export type Message = {
@@ -20,26 +21,42 @@ export type Message = {
   id: number;
 };
 
-export async function getAiResponse(topic: string, conversationHistory: string) {
+export async function getAiResponse(userId: string, topic: string, messages: Message[]) {
   try {
-    const result = await dynamicQuestionSelection({ topic, conversationHistory });
+    const conversationHistory = messages
+      .map((msg) => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
+      .join('\n');
 
-    const historyLines = conversationHistory.split('\n');
-    const lastUserMessage = historyLines[historyLines.length - 1];
+    // Fetch past conversation summaries to provide context
+    const conversationsRef = collection(db, 'users', userId, 'conversations');
+    const q = query(conversationsRef, orderBy('createdAt', 'desc'), limit(5));
+    const querySnapshot = await getDocs(q);
+    const pastConversations = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      // Combine messages to a string summary
+      return `On ${data.createdAt.toDate().toLocaleDateString()} about ${data.topic}: ${data.messages.map((m: any) => m.text).join(' ')}`;
+    }).join('\n\n');
 
-    if (lastUserMessage.startsWith('Student: ')) {
-      const userText = lastUserMessage.substring('Student: '.length);
+    const result = await dynamicQuestionSelection({
+      topic,
+      conversationHistory,
+      studentContext: pastConversations,
+    });
+
+    const lastUserMessage = messages[messages.length - 1];
+    
+    if (lastUserMessage && lastUserMessage.sender === 'user') {
+      const userText = lastUserMessage.text;
       const correctionResult = await getGrammarCorrection(userText);
 
       if (
         correctionResult.correctedText.toLowerCase() !== userText.toLowerCase()
       ) {
-        const rephrasingPrompt = `As an AI language assistant, your student said: "${userText}". A better way to say that is: "${correctionResult.correctedText}". Your planned next question is: "${result.nextQuestion}". Rephrase your next question to naturally and subtly model the corrected grammar without explicitly saying "you should say". For example, if the student says "I go to store" and you planned to ask "What did you buy?", you could instead say "Oh, you went to the store? What did you buy?"`;
-        // For now, we will just return the original question as rephrasing logic can be complex.
+         // The rephrasing logic can be complex, for now we will just use the correction as a potential field in the message.
       }
     }
 
-    return result.nextQuestion;
+    return result.nextResponse;
   } catch (error) {
     console.error('Error in getAiResponse:', error);
     return 'I seem to be having trouble thinking. Could you try that again?';
@@ -64,7 +81,10 @@ export async function saveConversation(
   topic: string,
   messages: Message[]
 ) {
-  if (!messages || messages.length === 0) return;
+  if (!messages || messages.length === 0 || !userId || userId === 'anonymous_user') {
+    console.log('Skipping save for anonymous or empty conversation.');
+    return;
+  }
   try {
     const conversationHistory = messages
       .map(msg => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
@@ -75,20 +95,38 @@ export async function saveConversation(
       conversationHistory,
     });
 
-    // Temporarily disable Firestore call
-    // await addDoc(collection(db, 'users', userId, 'conversations'), {
-    //   topic,
-    //   messages: messages.map(({ id, ...rest }) => rest),
-    //   feedback: feedbackResult.feedback,
-    //   createdAt: serverTimestamp(),
-    // });
-    console.log('Conversation saving is temporarily disabled.');
+    await addDoc(collection(db, 'users', userId, 'conversations'), {
+      topic,
+      messages: messages.map(({ id, ...rest }) => rest), // Remove client-side ID
+      feedback: feedbackResult.feedback,
+      createdAt: serverTimestamp(),
+    });
   } catch (error) {
     console.error('Error saving conversation:', error);
   }
 }
 
-export async function getRandomTopic(): Promise<string> {
-  const defaultTopics = ['General Conversation', 'Travel', 'Food', 'Technology'];
-  return defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
+export async function getRandomTopic(userId: string): Promise<string> {
+    if (!userId || userId === 'anonymous_user') {
+        const defaultTopics = ['General Conversation', 'Travel', 'Food', 'Technology'];
+        return defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
+    }
+    
+    try {
+        const topicsRef = collection(db, 'users', userId, 'topics');
+        const q = query(topicsRef, where('enabled', '==', true));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            return 'General Conversation';
+        }
+        
+        const enabledTopics = querySnapshot.docs.map(doc => doc.data().name);
+        return enabledTopics[Math.floor(Math.random() * enabledTopics.length)];
+
+    } catch (error) {
+        console.error("Error fetching user's topics, using default. Error: ", error);
+        const defaultTopics = ['General Conversation', 'Travel', 'Food', 'Technology'];
+        return defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
+    }
 }
