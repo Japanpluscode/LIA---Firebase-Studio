@@ -3,6 +3,7 @@
 import {dynamicQuestionSelection} from '@/ai/flows/dynamic-question-selection';
 import {correctGrammar} from '@/ai/flows/grammar-correction';
 import {generateFeedback} from '@/ai/flows/generate-feedback';
+import { textToSpeech } from '@/ai/flows/tts';
 import {db} from '@/lib/firebase';
 import {
   collection,
@@ -58,6 +59,9 @@ export async function getAiResponse(
       studentContext: pastConversations,
       studentProfile: studentProfile || 'No profile provided.',
     });
+    
+    const aiText = result.nextResponse;
+    const { audio } = await textToSpeech(aiText);
 
     const lastUserMessage = messages[messages.length - 1];
 
@@ -72,10 +76,12 @@ export async function getAiResponse(
       }
     }
 
-    return result.nextResponse;
+    return { text: aiText, audio };
   } catch (error) {
     console.error('Error in getAiResponse:', error);
-    return 'I seem to be having trouble thinking. Could you try that again?';
+    const errorMessage = 'I seem to be having trouble thinking. Could you try that again?';
+    const { audio } = await textToSpeech(errorMessage);
+    return { text: errorMessage, audio };
   }
 }
 

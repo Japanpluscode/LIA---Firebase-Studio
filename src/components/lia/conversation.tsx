@@ -30,6 +30,14 @@ export default function Conversation() {
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const { toast } = useToast();
+  
+  const playAudio = useCallback((audioDataUri: string) => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.src = audioDataUri;
+      audioPlayerRef.current.play().catch(e => console.error("Audio play failed", e));
+      setIsAiSpeaking(true);
+    }
+  }, []);
 
   const stopListening = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -47,27 +55,6 @@ export default function Conversation() {
     }
     setIsListening(false);
   }, []);
-
-  const handleAiResponse = async (userMessage: Message) => {
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-
-    setIsAiSpeaking(true);
-    const aiText = await getAiResponse(userId, topic, updatedMessages);
-    setIsAiSpeaking(false);
-
-    const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
-    const finalMessages = [...updatedMessages, aiMessage];
-    setMessages(finalMessages);
-    
-    console.log("AI says: ", aiText);
-
-    await saveConversation(userId, topic, finalMessages);
-    
-    // After AI speaks, start listening again
-    startListening(); 
-  };
-
 
   const startListening = useCallback(async () => {
     if (isListening || isAiSpeaking) return;
@@ -111,7 +98,7 @@ export default function Conversation() {
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       
       const checkSilence = () => {
-        if (!analyserRef.current) return;
+        if (!analyserRef.current || !isListeningRef.current) return;
         analyserRef.current.getByteTimeDomainData(dataArray);
         const volume = dataArray.reduce((acc, val) => acc + Math.abs(val - 128), 0) / dataArray.length / 128;
 
@@ -127,7 +114,7 @@ export default function Conversation() {
             silenceTimerRef.current = null;
           }
         }
-        if (isListening) {
+        if (isListeningRef.current) {
           requestAnimationFrame(checkSilence);
         }
       };
@@ -142,16 +129,32 @@ export default function Conversation() {
       });
       setIsListening(false);
     }
-  }, [isListening, isAiSpeaking, toast, stopListening, messages, topic, userId]);
+  }, [isListening, isAiSpeaking, toast, stopListening]);
 
+  const handleAiResponse = async (userMessage: Message) => {
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setIsProcessing(true);
+    
+    const { text: aiText, audio: aiAudio } = await getAiResponse(userId, topic, updatedMessages);
+    
+    setIsProcessing(false);
+
+    const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
+    const finalMessages = [...updatedMessages, aiMessage];
+    setMessages(finalMessages);
+    
+    console.log("AI says: ", aiText);
+    playAudio(aiAudio);
+
+    await saveConversation(userId, topic, finalMessages);
+  };
 
   const handleStartConversation = async () => {
     setIsProcessing(true);
     setConversationStarted(true);
     
-    // In a real app, you'd get this from your auth system.
-    // For now, we can switch to a "real" user for testing storage.
-    const testUserId = 'user_1'; // Let's use the first user from our placeholder data
+    const testUserId = 'user_1';
     setUserId(testUserId);
     
     const randomTopic = await getRandomTopic(testUserId);
@@ -159,17 +162,35 @@ export default function Conversation() {
 
     const firstAiText = `Hello! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;
 
+    const { audio } = await textToSpeech(firstAiText);
+    
     const aiMessage: Message = { id: Date.now(), sender: 'ai', text: firstAiText };
     setMessages([aiMessage]);
     
-    setIsAiSpeaking(true);
-    // Simulate AI speaking time before listening starts
-    setTimeout(() => {
-      setIsAiSpeaking(false);
-      setIsProcessing(false);
-      startListening();
-    }, 2000);
+    setIsProcessing(false);
+    playAudio(audio);
   };
+  
+  // Refs to track state in callbacks
+  const isListeningRef = useRef(isListening);
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
+  // Audio player event listener
+  useEffect(() => {
+    const player = audioPlayerRef.current;
+    if (player) {
+      const handleAudioEnd = () => {
+        setIsAiSpeaking(false);
+        startListening();
+      };
+      player.addEventListener('ended', handleAudioEnd);
+      return () => {
+        player.removeEventListener('ended', handleAudioEnd);
+      };
+    }
+  }, [startListening]);
 
   const buttonState = () => {
     if (!conversationStarted) return 'start';
@@ -185,20 +206,23 @@ export default function Conversation() {
     <div className="flex flex-col items-center justify-center w-full h-full">
       <div className="relative mb-8">
         <button
-          onClick={handleStartConversation}
-          disabled={currentButtonState !== 'start'}
+          onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : undefined)}
+          disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
             'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
             {
-              'cursor-pointer hover:opacity-90': currentButtonState === 'start',
-              'cursor-not-allowed opacity-80': currentButtonState !== 'start',
+              'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening',
+              'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
               'animate-pulse-strong': currentButtonState === 'speaking' || currentButtonState === 'processing' || currentButtonState === 'listening'
             }
           )}
           style={{
              boxShadow: '0 0 20px 5px hsla(var(--primary) / 0.5), 0 0 40px 10px hsla(var(--primary) / 0.3)',
           }}
-          aria-label="Start Conversation"
+          aria-label={
+            currentButtonState === 'start' ? "Start Conversation" : 
+            currentButtonState === 'listening' ? "Stop Listening" : "L.I.A. is active"
+          }
         >
           <Image
             src="https://picsum.photos/256/256"
@@ -222,11 +246,14 @@ export default function Conversation() {
           {(currentButtonState === 'speaking' || currentButtonState === 'processing') && (
             <div className="flex items-center space-x-2">
               <Waves className="h-6 w-6 text-blue-400" />
-              <p className="text-lg font-medium text-gray-300">L.I.A. is thinking...</p>
+              <p className="text-lg font-medium text-gray-300">{isProcessing ? 'L.I.A. is thinking...' : 'L.I.A. is speaking...'}</p>
             </div>
           )}
           {currentButtonState === 'start' && (
              <p className="text-lg font-medium text-gray-300">Click the avatar to start the conversation.</p>
+          )}
+          {currentButtonState === 'idle' && (
+             <p className="text-lg font-medium text-gray-300">Click the avatar to speak.</p>
           )}
       </div>
       
