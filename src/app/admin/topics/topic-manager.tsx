@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { getTopics, addTopic, addUser } from './actions';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {useState, useTransition} from 'react';
+import {getTopics, addTopic, addUser} from './actions';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -11,20 +11,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import TopicList, { Topic } from './topic-list';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import TopicList, {Topic} from './topic-list';
+import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 type User = {
   id: string;
   name: string;
+  profile?: string;
 };
 
-export default function TopicManager({ users }: { users: User[] }) {
+export default function TopicManager({users}: {users: User[]}) {
   const [currentUsers, setCurrentUsers] = useState<User[]>(users);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [topics, setTopics] = useState<Topic[]>([]);
   const [newTopicName, setNewTopicName] = useState('');
   const [newUserName, setNewUserName] = useState('');
+  const [newUserProfile, setNewUserProfile] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isAddingUser, startAddingUserTransition] = useTransition();
 
@@ -52,21 +56,21 @@ export default function TopicManager({ users }: { users: User[] }) {
       setTopics(userTopics);
     });
   };
-  
+
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName.trim()) return;
 
     startAddingUserTransition(async () => {
-      const result = await addUser(newUserName);
+      const result = await addUser(newUserName, newUserProfile);
       if (result.success && result.newUser) {
         setCurrentUsers(prev => [...prev, result.newUser!]);
         setNewUserName('');
+        setNewUserProfile('');
       }
       // TODO: Handle error case with a toast
     });
   };
-
 
   return (
     <div>
@@ -75,16 +79,36 @@ export default function TopicManager({ users }: { users: User[] }) {
           <CardTitle>Add New Student</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAddUser} className="flex gap-2">
-            <Input
-              name="userName"
-              placeholder="Enter new student name"
-              className="bg-input text-foreground placeholder:text-muted-foreground"
-              value={newUserName}
-              onChange={(e) => setNewUserName(e.target.value)}
-              required
-            />
-            <Button type="submit" disabled={isAddingUser || !newUserName.trim()}>
+          <form onSubmit={handleAddUser} className="flex flex-col gap-4">
+            <div className='grid gap-2'>
+               <Label htmlFor="userName">Student Name</Label>
+               <Input
+                id="userName"
+                name="userName"
+                placeholder="Enter new student name"
+                className="bg-input text-foreground placeholder:text-muted-foreground"
+                value={newUserName}
+                onChange={e => setNewUserName(e.target.value)}
+                required
+              />
+            </div>
+            <div className='grid gap-2'>
+              <Label htmlFor="userProfile">Student Profile & Preferences</Label>
+              <Textarea
+                id="userProfile"
+                name="userProfile"
+                placeholder="e.g., Loves hiking, reading fantasy novels, and trying new vegetarian recipes. Learning Spanish for an upcoming trip to Peru."
+                className="bg-input text-foreground placeholder:text-muted-foreground"
+                value={newUserProfile}
+                onChange={e => setNewUserProfile(e.target.value)}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={isAddingUser || !newUserName.trim()}
+              className="w-fit"
+            >
               {isAddingUser ? 'Adding...' : 'Add Student'}
             </Button>
           </form>
@@ -93,7 +117,10 @@ export default function TopicManager({ users }: { users: User[] }) {
 
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="flex-1">
-          <label htmlFor="user-select" className="block text-sm font-medium mb-2">
+          <label
+            htmlFor="user-select"
+            className="block text-sm font-medium mb-2"
+          >
             Select Student
           </label>
           <Select onValueChange={handleUserChange} value={selectedUserId}>
@@ -110,24 +137,26 @@ export default function TopicManager({ users }: { users: User[] }) {
           </Select>
         </div>
       </div>
-      
+
       {selectedUserId && (
         <form onSubmit={handleAddTopic} className="flex gap-2 mb-4">
-            <Input
-              name="topicName"
-              placeholder="Enter new topic"
-              className="bg-input text-foreground placeholder:text-muted-foreground"
-              value={newTopicName}
-              onChange={(e) => setNewTopicName(e.target.value)}
-              required
-              disabled={!selectedUserId}
-            />
-            <Button type="submit" disabled={!selectedUserId || !newTopicName.trim()}>
-              Add Topic
-            </Button>
+          <Input
+            name="topicName"
+            placeholder="Enter new topic"
+            className="bg-input text-foreground placeholder:text-muted-foreground"
+            value={newTopicName}
+            onChange={e => setNewTopicName(e.target.value)}
+            required
+            disabled={!selectedUserId}
+          />
+          <Button
+            type="submit"
+            disabled={!selectedUserId || !newTopicName.trim()}
+          >
+            Add Topic
+          </Button>
         </form>
       )}
-
 
       {isPending ? (
         <p className="text-muted-foreground mt-4">Loading topics...</p>

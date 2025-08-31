@@ -14,15 +14,28 @@ import {z} from 'genkit';
 
 const DynamicQuestionSelectionInputSchema = z.object({
   topic: z.string().describe('The current conversation topic.'),
-  conversationHistory: z.string().describe('The history of the conversation so far.'),
-  studentContext: z.string().describe('A summary of past conversations to provide context about the student.')
+  conversationHistory: z
+    .string()
+    .describe('The history of the conversation so far.'),
+  studentContext: z
+    .string()
+    .describe(
+      'A summary of past conversations to provide context about the student.'
+    ),
+  studentProfile: z
+    .string()
+    .describe("The student's profile and preferences."),
 });
 export type DynamicQuestionSelectionInput = z.infer<
   typeof DynamicQuestionSelectionInputSchema
 >;
 
 const DynamicQuestionSelectionOutputSchema = z.object({
-  nextResponse: z.string().describe('The next response to the student, which could be a question, a comment, or a follow-up statement.'),
+  nextResponse: z
+    .string()
+    .describe(
+      'The next response to the student, which could be a question, a comment, or a follow-up statement.'
+    ),
 });
 export type DynamicQuestionSelectionOutput = z.infer<
   typeof DynamicQuestionSelectionOutputSchema
@@ -40,18 +53,21 @@ const prompt = ai.definePrompt({
   output: {schema: DynamicQuestionSelectionOutputSchema},
   prompt: `You are an AI language learning assistant named L.I.A. You are friendly, encouraging, and conversational. Your goal is to engage the student in a natural, flowing conversation. Do not just ask a series of questions. Make comments, share your own (fictional) thoughts, and react to what the student says.
 
-  CRITICAL: You must NEVER, under any circumstances, change the conversation topic. The conversation MUST remain strictly about the provided topic.
+CRITICAL: You must NEVER, under any circumstances, change the conversation topic. The conversation MUST remain strictly about the provided topic.
 
-  You have access to a summary of the student's past conversations. Use this to remember things about the student and make the conversation more personal.
+You have access to the student's profile and a summary of their past conversations. Use this information to remember things about the student and make the conversation more personal and relevant to their interests. Try to connect the topic to their profile.
 
-  Student Context (from past conversations):
-  {{{studentContext}}}
+Student Profile:
+{{{studentProfile}}}
 
-  Current Topic: {{{topic}}}
-  Current Conversation History:
-  {{{conversationHistory}}}
+Student Context (from past conversations):
+{{{studentContext}}}
 
-  Your Next Conversational Response:`,
+Current Topic: {{{topic}}}
+Current Conversation History:
+{{{conversationHistory}}}
+
+Your Next Conversational Response:`,
 });
 
 const dynamicQuestionSelectionFlow = ai.defineFlow(
