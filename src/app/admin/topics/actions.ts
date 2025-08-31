@@ -10,39 +10,37 @@ import {
   updateDoc,
   query,
   where,
+  getDoc,
+  setDoc,
 } from 'firebase/firestore';
 import {revalidatePath} from 'next/cache';
 
-// Placeholder data since Firestore is not connected
-let placeholderUsers = [
-  {
-    id: 'user_1',
-    name: 'Alice',
-    profile: 'Loves hiking, reading fantasy novels, and trying new vegetarian recipes. Learning Spanish for an upcoming trip to Peru.',
-    topics: [
-      {id: 'topic_1_1', name: 'Travel', enabled: true},
-      {id: 'topic_1_2', name: 'Food', enabled: true},
-    ],
-  },
-  {
-    id: 'user_2',
-    name: 'Bob',
-    profile: 'Works as a software developer. Interested in AI, sci-fi movies, and playing the guitar. Wants to improve his conversational English.',
-    topics: [
-      {id: 'topic_2_1', name: 'Technology', enabled: true},
-      {id: 'topic_2_2', name: 'Work', enabled: false},
-    ],
-  },
-];
-
 export async function getUsers() {
-  // Return placeholder data
-  return placeholderUsers.map(u => ({id: u.id, name: u.name, profile: u.profile}));
+  try {
+    const usersCollection = collection(db, 'users');
+    const usersSnapshot = await getDocs(usersCollection);
+    const users = usersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as {id: string; name: string; profile: string}[];
+    return users;
+  } catch (error) {
+    console.error('Error getting users:', error);
+    return [];
+  }
 }
 
 export async function getUser(userId: string) {
-  const user = placeholderUsers.find(u => u.id === userId);
-  return user ? user : null;
+   try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, profile: string};
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting user:', error);
+    return null;
+  }
 }
 
 export async function addUser(name: string, profile: string) {
@@ -50,16 +48,12 @@ export async function addUser(name: string, profile: string) {
     return {error: 'User name cannot be empty.'};
   }
   try {
-    const newId = `user_${Date.now()}`;
-    const newUser = {
-      id: newId,
+    const docRef = await addDoc(collection(db, 'users'), {
       name: name.trim(),
       profile: profile.trim(),
-      topics: [],
-    };
-    placeholderUsers.push(newUser);
+    });
     revalidatePath('/admin/topics');
-    return {success: true, newUser: {id: newUser.id, name: newUser.name, profile: newUser.profile}};
+    return {success: true, newUser: {id: docRef.id, name: name.trim(), profile: profile.trim()}};
   } catch (error) {
     console.error('Error adding user:', error);
     return {error: 'Failed to add user.'};
@@ -67,9 +61,18 @@ export async function addUser(name: string, profile: string) {
 }
 
 export async function getTopics(userId: string) {
-  // Return placeholder data for a specific user
-  const user = placeholderUsers.find(u => u.id === userId);
-  return user ? user.topics : [];
+  try {
+    const topicsCollection = collection(db, 'users', userId, 'topics');
+    const topicsSnapshot = await getDocs(topicsCollection);
+    const topics = topicsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as {id: string; name: string; enabled: boolean}[];
+    return topics;
+  } catch (error) {
+    console.error('Error getting topics:', error);
+    return [];
+  }
 }
 
 export async function addTopic(userId: string, topicName: string) {
@@ -77,18 +80,12 @@ export async function addTopic(userId: string, topicName: string) {
     return {error: 'User ID and topic name cannot be empty.'};
   }
   try {
-    const user = placeholderUsers.find(u => u.id === userId);
-    if (user) {
-      const newTopic = {
-        id: `topic_${userId}_${user.topics.length + 1}`,
-        name: topicName.trim(),
-        enabled: true,
-      };
-      user.topics.push(newTopic);
-      revalidatePath('/admin/topics');
-      return {success: true};
-    }
-    return {error: 'User not found.'};
+    await addDoc(collection(db, 'users', userId, 'topics'), {
+      name: topicName.trim(),
+      enabled: true,
+    });
+    revalidatePath('/admin/topics');
+    return {success: true};
   } catch (error) {
     console.error('Error adding topic:', error);
     return {error: 'Failed to add topic.'};
@@ -97,13 +94,9 @@ export async function addTopic(userId: string, topicName: string) {
 
 export async function deleteTopic(userId: string, topicId: string) {
   try {
-    const user = placeholderUsers.find(u => u.id === userId);
-    if (user) {
-      user.topics = user.topics.filter(topic => topic.id !== topicId);
-      revalidatePath('/admin/topics');
-      return {success: true};
-    }
-    return {error: 'User not found.'};
+    await deleteDoc(doc(db, 'users', userId, 'topics', topicId));
+    revalidatePath('/admin/topics');
+    return {success: true};
   } catch (error) {
     console.error('Error deleting topic:', error);
     return {error: 'Failed to delete topic.'};
@@ -116,16 +109,12 @@ export async function toggleTopic(
   currentState: boolean
 ) {
   try {
-    const user = placeholderUsers.find(u => u.id === userId);
-    if (user) {
-      const topic = user.topics.find(t => t.id === topicId);
-      if (topic) {
-        topic.enabled = !currentState;
-      }
-      revalidatePath('/admin/topics');
-      return {success: true};
-    }
-    return {error: 'User not found.'};
+    const topicRef = doc(db, 'users', userId, 'topics', topicId);
+    await updateDoc(topicRef, {
+      enabled: !currentState,
+    });
+    revalidatePath('/admin/topics');
+    return {success: true};
   } catch (error) {
     console.error('Error toggling topic:', error);
     return {error: 'Failed to update topic status.'};
