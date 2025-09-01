@@ -229,8 +229,8 @@ export default function Conversation({ userId, userName }: { userId: string; use
           <Image
             src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
-            width={256}
-            height={256}
+            fill
+            unoptimized={true}
             className="object-cover rounded-full"
             data-ai-hint="logo abstract"
             priority
