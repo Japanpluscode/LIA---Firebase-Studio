@@ -9,10 +9,11 @@ export default function ChatPage({ params }: { params: { userId: string } }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { userId } = params;
 
   useEffect(() => {
-    if (params.userId) {
-      getUser(params.userId)
+    if (userId) {
+      getUser(userId)
         .then((userData) => {
           if (userData) {
             setUser(userData);
@@ -23,7 +24,7 @@ export default function ChatPage({ params }: { params: { userId: string } }) {
         .catch(() => setError('Failed to load user data.'))
         .finally(() => setLoading(false));
     }
-  }, [params.userId]);
+  }, [userId]);
 
   if (loading) {
     return (

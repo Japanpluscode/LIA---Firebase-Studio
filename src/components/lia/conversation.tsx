@@ -230,6 +230,7 @@ export default function Conversation({ userId, userName }: { userId: string; use
             src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
             fill
+            sizes="(max-width: 768px) 192px, 256px"
             className="rounded-full object-cover"
             priority
           />
