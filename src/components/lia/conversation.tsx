@@ -12,7 +12,7 @@ import Image from 'next/image';
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
 const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
 
-const LIA_AVATAR_URL = "https://i.imgur.com/3f3n4Y1.png";
+const LIA_AVATAR_URL = "https://firebasestorage.googleapis.com/v0/b/test-project-dev-3923a.appspot.com/o/lia-avatar.png?alt=media&token=5b948f8c-4f8e-496e-b1c4-11754117b1b1";
 
 export default function Conversation({ userId, userName }: { userId: string; userName: string; }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
