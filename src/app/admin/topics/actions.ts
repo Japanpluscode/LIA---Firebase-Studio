@@ -20,7 +20,6 @@ export type User = {
   name: string;
   email: string;
   profile: string;
-  avatarUrl?: string;
 };
 
 export async function getUsers() {
@@ -68,7 +67,7 @@ export async function getUserByEmail(email: string) {
 }
 
 
-export async function addUser(name: string, email: string, profile: string, avatarUrl: string) {
+export async function addUser(name: string, email: string, profile: string) {
   if (!name || name.trim() === '' || !email || email.trim() === '') {
     return {error: 'User name and email cannot be empty.'};
   }
@@ -83,7 +82,6 @@ export async function addUser(name: string, email: string, profile: string, avat
       name: name.trim(),
       email: email.trim().toLowerCase(),
       profile: profile.trim(),
-      avatarUrl: avatarUrl.trim() || "https://i.imgur.com/3f8w2yS.png"
     };
 
     const docRef = await addDoc(collection(db, 'users'), newUser);
