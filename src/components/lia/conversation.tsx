@@ -211,7 +211,7 @@ export default function Conversation({ userId, userName }: { userId: string; use
           onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : startListening)}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
-            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
+            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening' || currentButtonState === 'idle',
               'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
@@ -230,8 +230,7 @@ export default function Conversation({ userId, userName }: { userId: string; use
             src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
             fill
-            unoptimized={true}
-            className="object-cover rounded-full"
+            className="rounded-full object-cover"
             data-ai-hint="logo abstract"
             priority
           />
