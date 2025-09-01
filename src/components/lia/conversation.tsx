@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils';
 import { getAiResponse, saveConversation, getRandomTopic, Message } from '@/app/actions';
 import { textToSpeech } from '@/ai/flows/tts';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image';
 
 // Silence detection parameters
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
@@ -226,13 +225,10 @@ export default function Conversation({ userId, userName }: { userId: string; use
             currentButtonState === 'listening' ? "Stop Listening" : "L.I.A. is active"
           }
         >
-          <Image
+          <img
             src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
-            fill
-            className="rounded-full object-cover"
-            data-ai-hint="logo abstract"
-            priority
+            className="rounded-full object-cover h-full w-full"
           />
         </button>
       </div>
