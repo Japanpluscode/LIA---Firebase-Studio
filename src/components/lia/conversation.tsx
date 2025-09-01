@@ -6,13 +6,42 @@ import { cn } from '@/lib/utils';
 import { getAiResponse, saveConversation, getRandomTopic, Message } from '@/app/actions';
 import { textToSpeech } from '@/ai/flows/tts';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image';
 
 // Silence detection parameters
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
 const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
 
-const LIA_AVATAR_URL = "https://firebasestorage.googleapis.com/v0/b/test-project-dev-3923a.appspot.com/o/lia-avatar.png?alt=media&token=5b948f8c-4f8e-496e-b1c4-11754117b1b1";
+const LiaAvatar = () => (
+  <svg
+    className="absolute inset-0 w-full h-full"
+    viewBox="0 0 100 100"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-label="L.I.A. Avatar"
+  >
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+        <stop offset="70%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0.75 }} />
+        <stop offset="95%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0 }} />
+      </radialGradient>
+    </defs>
+    <circle
+      cx="50"
+      cy="50"
+      r="50"
+      fill="url(#glow)"
+      className="opacity-50"
+    />
+    <circle
+      cx="50"
+      cy="50"
+      r="40"
+      fill="hsl(var(--background))"
+      stroke="hsl(var(--primary))"
+      strokeWidth="1"
+    />
+  </svg>
+);
+
 
 export default function Conversation({ userId, userName }: { userId: string; userName: string; }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -211,29 +240,19 @@ export default function Conversation({ userId, userName }: { userId: string; use
           onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : startListening)}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
-            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center shadow-2xl transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening' || currentButtonState === 'idle',
               'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
               'animate-pulse-strong': currentButtonState === 'speaking' || currentButtonState === 'processing' || currentButtonState === 'listening'
             }
           )}
-          style={{
-             boxShadow: '0 0 20px 5px hsla(var(--primary) / 0.5), 0 0 40px 10px hsla(var(--primary) / 0.3)',
-          }}
           aria-label={
             currentButtonState === 'start' ? "Start Conversation" : 
             currentButtonState === 'listening' ? "Stop Listening" : "L.I.A. is active"
           }
         >
-          <Image
-            src={LIA_AVATAR_URL}
-            alt="L.I.A. Avatar"
-            fill
-            sizes="(max-width: 768px) 192px, 256px"
-            className="rounded-full object-cover"
-            priority
-          />
+          <LiaAvatar />
         </button>
       </div>
       
