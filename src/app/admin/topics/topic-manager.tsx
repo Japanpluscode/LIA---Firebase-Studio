@@ -15,13 +15,8 @@ import TopicList, {Topic} from './topic-list';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import type { User } from './actions';
 
-type User = {
-  id: string;
-  name: string;
-  email?: string;
-  profile?: string;
-};
 
 export default function TopicManager({users}: {users: User[]}) {
   const [currentUsers, setCurrentUsers] = useState<User[]>(users);
@@ -31,6 +26,7 @@ export default function TopicManager({users}: {users: User[]}) {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserProfile, setNewUserProfile] = useState('');
+  const [newUserAvatarUrl, setNewUserAvatarUrl] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isAddingUser, startAddingUserTransition] = useTransition();
 
@@ -64,12 +60,13 @@ export default function TopicManager({users}: {users: User[]}) {
     if (!newUserName.trim() || !newUserEmail.trim()) return;
 
     startAddingUserTransition(async () => {
-      const result = await addUser(newUserName, newUserEmail, newUserProfile);
+      const result = await addUser(newUserName, newUserEmail, newUserProfile, newUserAvatarUrl);
       if (result.success && result.newUser) {
         setCurrentUsers(prev => [...prev, result.newUser!]);
         setNewUserName('');
         setNewUserEmail('');
         setNewUserProfile('');
+        setNewUserAvatarUrl('');
       }
       // TODO: Handle error case with a toast
     });
@@ -117,6 +114,17 @@ export default function TopicManager({users}: {users: User[]}) {
                 className="bg-input text-foreground placeholder:text-muted-foreground"
                 value={newUserProfile}
                 onChange={e => setNewUserProfile(e.target.value)}
+              />
+            </div>
+             <div className='grid gap-2'>
+               <Label htmlFor="userAvatar">Avatar URL (Optional)</Label>
+               <Input
+                id="userAvatar"
+                name="userAvatar"
+                placeholder="https://example.com/avatar.png"
+                className="bg-input text-foreground placeholder:text-muted-foreground"
+                value={newUserAvatarUrl}
+                onChange={e => setNewUserAvatarUrl(e.target.value)}
               />
             </div>
 

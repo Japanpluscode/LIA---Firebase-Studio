@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Conversation from '@/components/lia/conversation';
-import { getUser } from '@/app/admin/topics/actions';
+import { getUser, User } from '@/app/admin/topics/actions';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ChatPage({ params }: { params: { userId: string } }) {
-  const [user, setUser] = useState<{ id: string; name: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +46,7 @@ export default function ChatPage({ params }: { params: { userId: string } }) {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-[#2a1a45] via-[#2a1a45] to-[#3f2569] p-4 md:p-8">
-      {user && <Conversation userId={user.id} userName={user.name} />}
+      {user && <Conversation userId={user.id} userName={user.name} avatarUrl={user.avatarUrl} />}
     </main>
   );
 }

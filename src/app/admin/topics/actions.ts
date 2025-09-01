@@ -15,6 +15,14 @@ import {
 } from 'firebase/firestore';
 import {revalidatePath} from 'next/cache';
 
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  profile: string;
+  avatarUrl?: string;
+};
+
 export async function getUsers() {
   try {
     const usersCollection = collection(db, 'users');
@@ -22,7 +30,7 @@ export async function getUsers() {
     const users = usersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-    })) as {id: string; name: string; email: string; profile: string}[];
+    })) as User[];
     return users;
   } catch (error) {
     console.error('Error getting users:', error);
@@ -34,7 +42,7 @@ export async function getUser(userId: string) {
    try {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (userDoc.exists()) {
-      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, email: string, profile: string};
+      return { id: userDoc.id, ...userDoc.data() } as User;
     }
     return null;
   } catch (error) {
@@ -50,7 +58,7 @@ export async function getUserByEmail(email: string) {
     const querySnapshot = await getDocs(q);
     if (!querySnapshot.empty) {
       const userDoc = querySnapshot.docs[0];
-      return { id: userDoc.id, ...userDoc.data() } as {id: string, name: string, email: string, profile: string};
+      return { id: userDoc.id, ...userDoc.data() } as User;
     }
     return null;
   } catch (error) {
@@ -60,7 +68,7 @@ export async function getUserByEmail(email: string) {
 }
 
 
-export async function addUser(name: string, email: string, profile: string) {
+export async function addUser(name: string, email: string, profile: string, avatarUrl: string) {
   if (!name || name.trim() === '' || !email || email.trim() === '') {
     return {error: 'User name and email cannot be empty.'};
   }
@@ -71,13 +79,16 @@ export async function addUser(name: string, email: string, profile: string) {
   }
 
   try {
-    const docRef = await addDoc(collection(db, 'users'), {
+    const newUser = {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       profile: profile.trim(),
-    });
+      avatarUrl: avatarUrl.trim() || "https://i.imgur.com/3f8w2yS.png"
+    };
+
+    const docRef = await addDoc(collection(db, 'users'), newUser);
     revalidatePath('/admin/topics');
-    return {success: true, newUser: {id: docRef.id, name: name.trim(), email: email.trim().toLowerCase(), profile: profile.trim()}};
+    return {success: true, newUser: {id: docRef.id, ...newUser}};
   } catch (error) {
     console.error('Error adding user:', error);
     return {error: 'Failed to add user.'};
