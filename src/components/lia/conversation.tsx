@@ -6,12 +6,13 @@ import { cn } from '@/lib/utils';
 import { getAiResponse, saveConversation, getRandomTopic, Message } from '@/app/actions';
 import { textToSpeech } from '@/ai/flows/tts';
 import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image';
 
 // Silence detection parameters
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
 const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
 
-const LIA_AVATAR_URL = "https://firebasestorage.googleapis.com/v0/b/lia-language-app.appspot.com/o/LIA.png?alt=media&token=c97d3cb6-1565-4205-bd13-80885907ff13";
+const LIA_AVATAR_URL = "https://i.imgur.com/3f3n4Y1.png";
 
 export default function Conversation({ userId, userName }: { userId: string; userName: string; }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -225,10 +226,12 @@ export default function Conversation({ userId, userName }: { userId: string; use
             currentButtonState === 'listening' ? "Stop Listening" : "L.I.A. is active"
           }
         >
-          <img
+          <Image
             src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
-            className="rounded-full object-cover h-full w-full"
+            fill
+            className="rounded-full object-cover"
+            priority
           />
         </button>
       </div>
