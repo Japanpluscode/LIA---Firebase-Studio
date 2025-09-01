@@ -12,7 +12,9 @@ import Image from 'next/image';
 const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
 const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
 
-export default function Conversation({ userId, userName, avatarUrl }: { userId: string; userName: string; avatarUrl?: string }) {
+const LIA_AVATAR_URL = "https://i.imgur.com/3f8w2yS.png";
+
+export default function Conversation({ userId, userName }: { userId: string; userName: string; }) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [conversationStarted, setConversationStarted] = useState(false);
@@ -225,7 +227,7 @@ export default function Conversation({ userId, userName, avatarUrl }: { userId: 
           }
         >
           <Image
-            src={avatarUrl || "https://i.imgur.com/3f8w2yS.png"}
+            src={LIA_AVATAR_URL}
             alt="L.I.A. Avatar"
             width={256}
             height={256}
