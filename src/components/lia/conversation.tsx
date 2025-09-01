@@ -144,7 +144,9 @@ export default function Conversation({ userId, userName }: { userId: string; use
     setMessages(finalMessages);
     
     console.log("AI says: ", aiText);
-    playAudio(aiAudio);
+    if(aiAudio) {
+      playAudio(aiAudio);
+    }
 
     await saveConversation(userId, topic, finalMessages);
   };
@@ -164,7 +166,9 @@ export default function Conversation({ userId, userName }: { userId: string; use
     setMessages([aiMessage]);
     
     setIsProcessing(false);
-    playAudio(audio);
+    if (audio) {
+      playAudio(audio);
+    }
   };
   
   // Refs to track state in callbacks
@@ -221,7 +225,7 @@ export default function Conversation({ userId, userName }: { userId: string; use
           }
         >
           <Image
-            src="https://picsum.photos/256/256"
+            src="https://i.ibb.co/Vvz4Jz8/Screenshot-2024-05-13-at-12-16-00-PM.png"
             alt="L.I.A. Avatar"
             width={256}
             height={256}
