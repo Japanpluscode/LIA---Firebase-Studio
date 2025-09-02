@@ -85,34 +85,43 @@ app.prepare().then(() => {
     ws.on('message', async (message: Buffer) => {
         // Forward the audio chunk to Google
         if (googleStream) {
-            await googleStream.send({ audio: message });
+            try {
+              await googleStream.send({ audio: message });
+            } catch(err) {
+              console.error('Error sending audio to Google:', err);
+            }
         }
     });
 
     // Handle messages from Google (AI audio response)
-    googleStream.response.then((stream: any) => {
-        (async () => {
-            for await (const response of stream) {
-                if (response.candidates && response.candidates[0].content.parts[0].audio) {
-                    const aiAudioChunk = response.candidates[0].content.parts[0].audio;
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(aiAudioChunk);
-                    }
+    const googleResponsePromise = (async () => {
+        const stream = await googleStream.response;
+        for await (const response of stream) {
+            if (response.candidates && response.candidates[0].content.parts[0].audio) {
+                const aiAudioChunk = response.candidates[0].content.parts[0].audio;
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(aiAudioChunk);
                 }
             }
-        })().catch(err => {
-            console.error('Error reading from Google stream:', err);
-            if(ws.readyState === WebSocket.OPEN) {
-                ws.close(1011, 'Error from AI service.');
-            }
-        });
+        }
+    })();
+
+    googleResponsePromise.catch(err => {
+        console.error('Error reading from Google stream:', err);
+        if(ws.readyState === WebSocket.OPEN) {
+            ws.close(1011, 'Error from AI service.');
+        }
     });
 
     const closeConnections = () => {
         console.log('Closing connections.');
         if (googleStream) {
             // This method to end the stream might need adjustment based on SDK updates
-            googleStream.end();
+            try {
+              googleStream.end();
+            } catch (err) {
+              console.log('Error ending Google Stream, it may have already closed.');
+            }
             googleStream = null;
         }
         if (ws.readyState === WebSocket.OPEN) {
