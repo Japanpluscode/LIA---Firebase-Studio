@@ -12,21 +12,15 @@ const STREAMING_LATENCY = 500; // The lower, the more real-time, but riskier for
 
 const LiaAvatar = () => (
   <svg
-    className="absolute inset-0 w-full h-full"
+    className="absolute inset-0 w-full h-full text-primary" // inherits theme color
     viewBox="0 0 100 100"
     xmlns="http://www.w3.org/2000/svg"
     aria-label="L.I.A. Avatar"
   >
     <defs>
       <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-        <stop
-          offset="70%"
-          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0.75}}
-        />
-        <stop
-          offset="95%"
-          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0}}
-        />
+        <stop offset="70%" stopColor="currentColor" stopOpacity="0.75" />
+        <stop offset="95%" stopColor="currentColor" stopOpacity="0" />
       </radialGradient>
       <clipPath id="circleClip">
         <circle cx="50" cy="50" r="40" />
@@ -47,7 +41,7 @@ const LiaAvatar = () => (
       cy="50"
       r="40"
       fill="none"
-      stroke="hsl(var(--primary))"
+      stroke="currentColor"
       strokeWidth="1"
     />
   </svg>
@@ -80,7 +74,12 @@ export default function Conversation({
         const audioData = audioQueueRef.current.shift();
         if (!audioData) return;
 
-        audioContextRef.current.decodeAudioData(audioData.buffer)
+        const ab = audioData.buffer.slice(
+          audioData.byteOffset,
+          audioData.byteOffset + audioData.byteLength
+        );
+
+        audioContextRef.current.decodeAudioData(ab)
             .then(buffer => {
                 if (!audioContextRef.current) return;
                 const source = audioContextRef.current.createBufferSource();
@@ -100,15 +99,26 @@ export default function Conversation({
     }
   }, []);
 
-  const handleSocketMessage = useCallback((event: MessageEvent) => {
-    const audioChunk = new Uint8Array(event.data);
+  const handleSocketMessage = useCallback(async (event: MessageEvent) => {
+    let arrayBuf: ArrayBuffer;
+
+    if (event.data instanceof ArrayBuffer) {
+      arrayBuf = event.data;
+    } else if (event.data instanceof Blob) {
+      arrayBuf = await event.data.arrayBuffer();
+    } else {
+      console.warn('Unexpected WebSocket message type:', typeof event.data);
+      return;
+    }
+
+    const audioChunk = new Uint8Array(arrayBuf);
     audioQueueRef.current.push(audioChunk);
     if (!isAiSpeaking) {
         playNextAudioChunk();
     }
   }, [isAiSpeaking, playNextAudioChunk]);
 
-   const startListening = useCallback(async () => {
+  const startListening = useCallback(async () => {
     if (isListening || isAiSpeaking) return;
 
     try {
@@ -148,6 +158,7 @@ export default function Conversation({
     const wsUrl = `${proto}//${host}/api/conversation`;
     
     const socket = new WebSocket(wsUrl);
+    socket.binaryType = 'arraybuffer'; // Important: Ensure we get ArrayBuffers
 
     socket.onopen = () => {
       console.log('WebSocket connected');
@@ -234,7 +245,7 @@ export default function Conversation({
           onClick={handleButtonClick}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
-            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening' || currentButtonState === 'idle',
               'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
