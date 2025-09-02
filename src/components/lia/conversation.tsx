@@ -80,11 +80,12 @@ export default function Conversation({
         const audioData = audioQueueRef.current.shift();
         if (!audioData) return;
 
-        const audioBuffer = audioContextRef.current.decodeAudioData(audioData.buffer)
+        audioContextRef.current.decodeAudioData(audioData.buffer)
             .then(buffer => {
-                const source = audioContextRef.current!.createBufferSource();
+                if (!audioContextRef.current) return;
+                const source = audioContextRef.current.createBufferSource();
                 source.buffer = buffer;
-                source.connect(audioContextRef.current!.destination);
+                source.connect(audioContextRef.current.destination);
                 source.onended = () => {
                     setIsAiSpeaking(false);
                     if (audioQueueRef.current.length > 0) {
@@ -107,14 +108,13 @@ export default function Conversation({
     }
   }, [isAiSpeaking, playNextAudioChunk]);
 
-  const startListening = useCallback(async () => {
+   const startListening = useCallback(async () => {
     if (isListening || isAiSpeaking) return;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }});
       streamRef.current = stream;
 
-      // Start the media recorder
       mediaRecorderRef.current = new MediaRecorder(stream);
       
       mediaRecorderRef.current.ondataavailable = (event) => {
@@ -123,10 +123,9 @@ export default function Conversation({
         }
       };
       
-      mediaRecorderRef.current.start(STREAMING_LATENCY); // Send data in chunks
+      mediaRecorderRef.current.start(STREAMING_LATENCY);
       setIsListening(true);
       
-      // Initialize audio context for playback if not already
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
       }
@@ -155,7 +154,6 @@ export default function Conversation({
       wsRef.current = socket;
       setConversationStarted(true);
       setIsProcessing(false);
-      // Automatically start listening once connected
       startListening();
     };
 
@@ -193,7 +191,6 @@ export default function Conversation({
     setIsListening(false);
   }, []);
 
-  // Clean up WebSocket on component unmount
   useEffect(() => {
     return () => {
       if (wsRef.current) {
