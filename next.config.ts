@@ -45,6 +45,14 @@ const nextConfig: NextConfig = {
       'https://*.firebase.studio',
     ],
   },
+  // Required for custom server with websockets
+  webpack: (config, { isServer, dev }) => {
+    if (isServer && dev) {
+      config.externals.push('ws');
+      config.externals.push('@google-cloud/vertexai');
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

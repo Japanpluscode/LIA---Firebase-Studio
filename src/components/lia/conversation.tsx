@@ -19,11 +19,19 @@ const LiaAvatar = () => (
     aria-label="L.I.A. Avatar"
   >
     <defs>
+      {/* Glow effect gradient */}
       <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
         <stop offset="70%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0.75 }} />
         <stop offset="95%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0 }} />
       </radialGradient>
+
+      {/* Define a circular clipping path */}
+      <clipPath id="circleClip">
+        <circle cx="50" cy="50" r="40" />
+      </clipPath>
     </defs>
+    
+    {/* Glow effect circle (background) */}
     <circle
       cx="50"
       cy="50"
@@ -31,11 +39,24 @@ const LiaAvatar = () => (
       fill="url(#glow)"
       className="opacity-50"
     />
+    
+    {/* Your image from Firebase Storage, clipped to the circle shape */}
+    <image 
+      href="https://firebasestorage.googleapis.com/v0/b/lia-language-app.firebasestorage.app/o/LIA.png?alt=media&token=c97d3cb6-1565-4205-bd13-80885907ff13"
+      x="10" 
+      y="10" 
+      height="80" 
+      width="80" 
+      clipPath="url(#circleClip)" 
+      preserveAspectRatio="xMidYMid slice"
+    />
+
+    {/* Optional: Add a border on top of the image */}
     <circle
       cx="50"
       cy="50"
       r="40"
-      fill="hsl(var(--background))"
+      fill="none"
       stroke="hsl(var(--primary))"
       strokeWidth="1"
     />
