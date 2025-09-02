@@ -6,14 +6,20 @@ import next from 'next';
 import { WebSocketServer, WebSocket } from 'ws';
 import { VertexAI } from '@google-cloud/vertexai';
 import { config } from 'dotenv';
+import minimist from 'minimist';
 
 // Load environment variables from .env file
 config();
 
+// Parse command-line arguments to get port and hostname
+const args = minimist(process.argv.slice(2));
+
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = 'localhost';
-// Use the PORT environment variable provided by the system, or default to 3000
-const port = parseInt(process.env.PORT || '3000', 10);
+// Use port from args, then from environment variable, then default to 3000
+const port = parseInt(args.port || process.env.PORT || '3000', 10);
+// Use hostname from args, then from environment variable, then default to 'localhost'
+const hostname = args.hostname || process.env.HOSTNAME || 'localhost';
+
 // when using middleware `hostname` and `port` must be provided below
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -141,7 +147,7 @@ app.prepare().then(() => {
 
   });
 
-  server.listen(port, () => {
+  server.listen(port, hostname, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
   }).on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
