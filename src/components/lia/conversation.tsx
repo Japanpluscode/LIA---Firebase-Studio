@@ -1,7 +1,7 @@
 'use client';
 
 import {useState, useRef, useEffect, useCallback} from 'react';
-import {Mic, Waves, Play, Pause} from 'lucide-react';
+import {Mic, Waves} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import {useToast} from '@/hooks/use-toast';
 
@@ -11,7 +11,7 @@ const MIC_SAMPLE_RATE = 16000; // Sample rate for the microphone
 const STREAMING_LATENCY = 500; // The lower, the more real-time, but riskier for slow networks.
 
 const LiaAvatar = () => (
-    <svg
+  <svg
     className="absolute inset-0 w-full h-full"
     viewBox="0 0 100 100"
     xmlns="http://www.w3.org/2000/svg"
@@ -19,27 +19,27 @@ const LiaAvatar = () => (
   >
     <defs>
       <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-        <stop offset="70%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0.75 }} />
-        <stop offset="95%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0 }} />
+        <stop
+          offset="70%"
+          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0.75}}
+        />
+        <stop
+          offset="95%"
+          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0}}
+        />
       </radialGradient>
       <clipPath id="circleClip">
         <circle cx="50" cy="50" r="40" />
       </clipPath>
     </defs>
-    <circle
-      cx="50"
-      cy="50"
-      r="50"
-      fill="url(#glow)"
-      className="opacity-50"
-    />
-    <image 
+    <circle cx="50" cy="50" r="50" fill="url(#glow)" className="opacity-50" />
+    <image
       href="https://firebasestorage.googleapis.com/v0/b/lia-language-app.appspot.com/o/LIA.png?alt=media&token=87a71871-26b2-4b36-812b-109436413280"
-      x="10" 
-      y="10" 
-      height="80" 
-      width="80" 
-      clipPath="url(#circleClip)" 
+      x="10"
+      y="10"
+      height="80"
+      width="80"
+      clipPath="url(#circleClip)"
       preserveAspectRatio="xMidYMid slice"
     />
     <circle
