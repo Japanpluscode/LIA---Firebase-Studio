@@ -1,4 +1,8 @@
-// 'use server'
+// This file is no longer used by the main conversation component,
+// as the logic has been replaced by a real-time WebSocket stream
+// directly to Vertex AI in `server.ts`.
+// It is kept here as an example of a Genkit text-based flow.
+'use server';
 
 /**
  * @fileOverview Grammar correction AI agent.
@@ -7,8 +11,6 @@
  * - CorrectGrammarInput - The input type for the correctGrammar function.
  * - CorrectGrammarOutput - The return type for the correctGrammar function.
  */
-
-'use server';
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';

@@ -1,18 +1,13 @@
 'use server';
 
-import {dynamicQuestionSelection} from '@/ai/flows/dynamic-question-selection';
-import {correctGrammar} from '@/ai/flows/grammar-correction';
-import {generateFeedback} from '@/ai/flows/generate-feedback';
-import { textToSpeech } from '@/ai/flows/tts';
+// This file is being kept for user management but conversation logic has moved.
+// Genkit flows are no longer directly called from here for the main conversation.
+
 import {db} from '@/lib/firebase';
 import {
   collection,
-  addDoc,
-  serverTimestamp,
   getDocs,
   query,
-  orderBy,
-  limit,
   where,
 } from 'firebase/firestore';
 import { getUser } from './admin/topics/actions';
@@ -24,113 +19,10 @@ export type Message = {
   id: number;
 };
 
-export async function getAiResponse(
-  userId: string,
-  topic: string,
-  messages: Message[]
-) {
-  try {
-    const conversationHistory = messages
-      .map(msg => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
-      .join('\n');
-
-    // Fetch past conversation summaries to provide context
-    const conversationsRef = collection(db, 'users', userId, 'conversations');
-    const q = query(conversationsRef, orderBy('createdAt', 'desc'), limit(5));
-    const querySnapshot = await getDocs(q);
-    const pastConversations = querySnapshot.docs
-      .map(doc => {
-        const data = doc.data();
-        // Combine messages to a string summary
-        return `On ${data.createdAt
-          .toDate()
-          .toLocaleDateString()} about ${data.topic}: ${data.messages
-          .map((m: any) => m.text)
-          .join(' ')}`;
-      })
-      .join('\n\n');
-
-    const studentData = await getUser(userId);
-    const studentProfile = studentData ? studentData.profile : 'No profile provided.';
-
-    const result = await dynamicQuestionSelection({
-      topic,
-      conversationHistory,
-      studentContext: pastConversations,
-      studentProfile: studentProfile || 'No profile provided.',
-    });
-    
-    const aiText = result.nextResponse;
-    const { audio } = await textToSpeech(aiText);
-
-    const lastUserMessage = messages[messages.length - 1];
-
-    if (lastUserMessage && lastUserMessage.sender === 'user') {
-      const userText = lastUserMessage.text;
-      const correctionResult = await getGrammarCorrection(userText);
-
-      if (
-        correctionResult.correctedText.toLowerCase() !== userText.toLowerCase()
-      ) {
-        // The rephrasing logic can be complex, for now we will just use the correction as a potential field in the message.
-      }
-    }
-
-    return { text: aiText, audio };
-  } catch (error) {
-    console.error('Error in getAiResponse:', error);
-    const errorMessage = 'I seem to be having trouble thinking. Could you try that again?';
-    const { audio } = await textToSpeech(errorMessage);
-    return { text: errorMessage, audio };
-  }
-}
-
-export async function getGrammarCorrection(text: string) {
-  try {
-    if (!text || text.trim().length < 5) {
-      return {correctedText: text};
-    }
-    const result = await correctGrammar({text});
-    return result;
-  } catch (error) {
-    console.error('Error in getGrammarCorrection:', error);
-    return {correctedText: text};
-  }
-}
-
-export async function saveConversation(
-  userId: string,
-  topic: string,
-  messages: Message[]
-) {
-  if (
-    !messages ||
-    messages.length === 0 ||
-    !userId
-  ) {
-    console.log('Skipping save for empty conversation.');
-    return;
-  }
-  try {
-    const conversationHistory = messages
-      .map(msg => `${msg.sender === 'user' ? 'Student' : 'L.I.A.'}: ${msg.text}`)
-      .join('\n');
-
-    const feedbackResult = await generateFeedback({
-      topic,
-      conversationHistory,
-    });
-
-    await addDoc(collection(db, 'users', userId, 'conversations'), {
-      topic,
-      messages: messages.map(({id, ...rest}) => rest), // Remove client-side ID
-      feedback: feedbackResult.feedback,
-      createdAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error saving conversation:', error);
-  }
-}
+// The core conversation logic now happens over WebSockets via server.ts
+// The following functions can be removed or repurposed for other features
+// like conversation history saving if needed, but they are not part of the
+// real-time loop anymore.
 
 export async function getRandomTopic(userId: string): Promise<string> {
   if (!userId) {

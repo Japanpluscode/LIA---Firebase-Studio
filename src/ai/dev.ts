@@ -2,7 +2,6 @@
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/dynamic-question-selection.ts';
-import '@/ai/flows/grammar-correction.ts';
-import '@/ai/flows/generate-feedback.ts';
-import '@/ai/flows/tts.ts';
+// The Genkit dev server is no longer needed for the primary conversation flow,
+// but can be kept for other potential Genkit features.
+// The imports for the conversation flows have been removed as they are no longer used.

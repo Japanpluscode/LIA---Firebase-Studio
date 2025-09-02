@@ -1,37 +1,31 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic, Waves } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { getAiResponse, saveConversation, getRandomTopic, Message } from '@/app/actions';
-import { textToSpeech } from '@/ai/flows/tts';
-import { useToast } from '@/hooks/use-toast';
+import {useState, useRef, useEffect, useCallback} from 'react';
+import {Mic, Waves, Play, Pause} from 'lucide-react';
+import {cn} from '@/lib/utils';
+import {useToast} from '@/hooks/use-toast';
 
-// Silence detection parameters
-const SILENCE_THRESHOLD = 0.01; // Volume threshold to consider as silence
-const SILENCE_DURATION = 1500; // Milliseconds of silence to trigger end of speech
+// Audio streaming parameters
+const AI_VOICE_NAME = 'en-US-Studio-O'; // Should match the voice in server.ts
+const MIC_SAMPLE_RATE = 16000; // Sample rate for the microphone
+const STREAMING_LATENCY = 500; // The lower, the more real-time, but riskier for slow networks.
 
 const LiaAvatar = () => (
-  <svg
+    <svg
     className="absolute inset-0 w-full h-full"
     viewBox="0 0 100 100"
     xmlns="http://www.w3.org/2000/svg"
     aria-label="L.I.A. Avatar"
   >
     <defs>
-      {/* Glow effect gradient */}
       <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
         <stop offset="70%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0.75 }} />
         <stop offset="95%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 0 }} />
       </radialGradient>
-
-      {/* Define a circular clipping path */}
       <clipPath id="circleClip">
         <circle cx="50" cy="50" r="40" />
       </clipPath>
     </defs>
-    
-    {/* Glow effect circle (background) */}
     <circle
       cx="50"
       cy="50"
@@ -39,10 +33,8 @@ const LiaAvatar = () => (
       fill="url(#glow)"
       className="opacity-50"
     />
-    
-    {/* Your image from Firebase Storage, clipped to the circle shape */}
     <image 
-      href="https://firebasestorage.googleapis.com/v0/b/lia-language-app.firebasestorage.app/o/LIA.png?alt=media&token=c97d3cb6-1565-4205-bd13-80885907ff13"
+      href="https://firebasestorage.googleapis.com/v0/b/lia-language-app.appspot.com/o/LIA.png?alt=media&token=87a71871-26b2-4b36-812b-109436413280"
       x="10" 
       y="10" 
       height="80" 
@@ -50,8 +42,6 @@ const LiaAvatar = () => (
       clipPath="url(#circleClip)" 
       preserveAspectRatio="xMidYMid slice"
     />
-
-    {/* Optional: Add a border on top of the image */}
     <circle
       cx="50"
       cy="50"
@@ -64,45 +54,107 @@ const LiaAvatar = () => (
 );
 
 
-export default function Conversation({ userId, userName }: { userId: string; userName: string; }) {
+export default function Conversation({
+  userId,
+  userName,
+}: {
+  userId: string;
+  userName: string;
+}) {
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Now means "connecting"
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [topic, setTopic] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
 
+  const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioQueueRef = useRef<Uint8Array[]>([]);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
 
-  const { toast } = useToast();
-  
-  const playAudio = useCallback((audioDataUri: string) => {
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.src = audioDataUri;
-      audioPlayerRef.current.play().catch(e => console.error("Audio play failed", e));
-      setIsAiSpeaking(true);
+  const {toast} = useToast();
+
+  const playNextAudioChunk = useCallback(() => {
+    if (audioQueueRef.current.length > 0 && audioContextRef.current) {
+        const audioData = audioQueueRef.current.shift();
+        if (!audioData) return;
+
+        const audioBuffer = audioContextRef.current.decodeAudioData(audioData.buffer)
+            .then(buffer => {
+                const source = audioContextRef.current!.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContextRef.current!.destination);
+                source.onended = () => {
+                    setIsAiSpeaking(false);
+                    if (audioQueueRef.current.length > 0) {
+                      playNextAudioChunk();
+                    }
+                };
+                source.start();
+                sourceNodeRef.current = source;
+                setIsAiSpeaking(true);
+            })
+            .catch(e => console.error("Error decoding audio data", e));
     }
   }, []);
+
+  const handleSocketMessage = useCallback((event: MessageEvent) => {
+    const audioChunk = new Uint8Array(event.data);
+    audioQueueRef.current.push(audioChunk);
+    if (!isAiSpeaking) {
+        playNextAudioChunk();
+    }
+  }, [isAiSpeaking, playNextAudioChunk]);
+
+
+  const startConversation = useCallback(async () => {
+    setIsProcessing(true);
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${proto}//${host}/api/conversation`;
+    
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+      wsRef.current = socket;
+      setConversationStarted(true);
+      setIsProcessing(false);
+      // Automatically start listening once connected
+      startListening();
+    };
+
+    socket.onmessage = handleSocketMessage;
+    
+    socket.onclose = () => {
+      console.log('WebSocket disconnected');
+      wsRef.current = null;
+      setConversationStarted(false);
+      setIsListening(false);
+    };
+    
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Connection Error',
+        description: 'Could not connect to the conversation service.',
+      });
+      setIsProcessing(false);
+      setConversationStarted(false);
+    };
+
+  }, [handleSocketMessage, toast, startListening]);
+
 
   const stopListening = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
-    if (streamRef.current) {
+     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
-    }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
     }
     setIsListening(false);
   }, []);
@@ -111,65 +163,25 @@ export default function Conversation({ userId, userName }: { userId: string; use
     if (isListening || isAiSpeaking) return;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }});
       streamRef.current = stream;
-      audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 256;
-      source.connect(analyserRef.current);
 
+      // Start the media recorder
       mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        setIsProcessing(true);
-        // For this prototype, we'll simulate speech-to-text with a placeholder user message.
-        const simulatedUserText = "I enjoy traveling to new places and trying different kinds of food.";
-
-        const userMessage: Message = {
-          id: Date.now(),
-          sender: 'user',
-          text: simulatedUserText,
-        };
-        
-        await handleAiResponse(userMessage);
-
-        setIsProcessing(false);
-      };
-
-      mediaRecorderRef.current.start();
-      setIsListening(true);
-
-      // Start silence detection
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       
-      const checkSilence = () => {
-        if (!analyserRef.current || !isListeningRef.current) return;
-        analyserRef.current.getByteTimeDomainData(dataArray);
-        const volume = dataArray.reduce((acc, val) => acc + Math.abs(val - 128), 0) / dataArray.length / 128;
-
-        if (volume < SILENCE_THRESHOLD) {
-          if (!silenceTimerRef.current) {
-            silenceTimerRef.current = setTimeout(() => {
-              stopListening();
-            }, SILENCE_DURATION);
-          }
-        } else {
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = null;
-          }
-        }
-        if (isListeningRef.current) {
-          requestAnimationFrame(checkSilence);
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+           wsRef.current.send(event.data);
         }
       };
-      checkSilence();
+      
+      mediaRecorderRef.current.start(STREAMING_LATENCY); // Send data in chunks
+      setIsListening(true);
+      
+      // Initialize audio context for playback if not already
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
 
     } catch (error) {
       console.error('Error accessing microphone:', error);
@@ -180,85 +192,50 @@ export default function Conversation({ userId, userName }: { userId: string; use
       });
       setIsListening(false);
     }
-  }, [isListening, isAiSpeaking, toast, stopListening]);
+  }, [isListening, isAiSpeaking, toast]);
 
-  const handleAiResponse = async (userMessage: Message) => {
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setIsProcessing(true);
-    
-    const { text: aiText, audio: aiAudio } = await getAiResponse(userId, topic, updatedMessages);
-    
-    setIsProcessing(false);
-
-    const aiMessage: Message = { id: Date.now() + 1, sender: 'ai', text: aiText };
-    const finalMessages = [...updatedMessages, aiMessage];
-    setMessages(finalMessages);
-    
-    console.log("AI says: ", aiText);
-    if(aiAudio) {
-      playAudio(aiAudio);
-    }
-
-    await saveConversation(userId, topic, finalMessages);
-  };
-
-  const handleStartConversation = async () => {
-    setIsProcessing(true);
-    setConversationStarted(true);
-    
-    const randomTopic = await getRandomTopic(userId);
-    setTopic(randomTopic);
-
-    const firstAiText = `Hello ${userName}! I'm L.I.A., your personal language immersion assistant. Let's talk about ${randomTopic}. To start, tell me what you enjoy about this topic.`;
-
-    const { audio } = await textToSpeech(firstAiText);
-    
-    const aiMessage: Message = { id: Date.now(), sender: 'ai', text: firstAiText };
-    setMessages([aiMessage]);
-    
-    setIsProcessing(false);
-    if (audio) {
-      playAudio(audio);
-    }
-  };
-  
-  // Refs to track state in callbacks
-  const isListeningRef = useRef(isListening);
+  // Clean up WebSocket on component unmount
   useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      stopListening();
+    };
+  }, [stopListening]);
 
-  // Audio player event listener
-  useEffect(() => {
-    const player = audioPlayerRef.current;
-    if (player) {
-      const handleAudioEnd = () => {
-        setIsAiSpeaking(false);
-        startListening();
-      };
-      player.addEventListener('ended', handleAudioEnd);
-      return () => {
-        player.removeEventListener('ended', handleAudioEnd);
-      };
-    }
-  }, [startListening]);
 
   const buttonState = () => {
+    if (isProcessing) return 'processing'; // Connecting
     if (!conversationStarted) return 'start';
-    if (isProcessing) return 'processing';
     if (isAiSpeaking) return 'speaking';
     if (isListening) return 'listening';
     return 'idle';
   };
 
   const currentButtonState = buttonState();
+  
+  const handleButtonClick = () => {
+    switch (currentButtonState) {
+        case 'start':
+            startConversation();
+            break;
+        case 'listening':
+            stopListening();
+            break;
+        case 'idle':
+            startListening();
+            break;
+        default:
+            break; // Do nothing for 'processing' or 'speaking'
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
       <div className="relative mb-8">
         <button
-          onClick={currentButtonState === 'start' ? handleStartConversation : (currentButtonState === 'listening' ? stopListening : startListening)}
+          onClick={handleButtonClick}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
             'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -287,7 +264,7 @@ export default function Conversation({ userId, userName }: { userId: string; use
           {(currentButtonState === 'speaking' || currentButtonState === 'processing') && (
             <div className="flex items-center space-x-2">
               <Waves className="h-6 w-6 text-blue-400" />
-              <p className="text-lg font-medium text-gray-300">{isProcessing ? 'L.I.A. is thinking...' : 'L.I.A. is speaking...'}</p>
+              <p className="text-lg font-medium text-gray-300">{isProcessing ? 'Connecting...' : 'L.I.A. is speaking...'}</p>
             </div>
           )}
           {currentButtonState === 'start' && (
@@ -297,8 +274,6 @@ export default function Conversation({ userId, userName }: { userId: string; use
              <p className="text-lg font-medium text-gray-300">Click the avatar to speak.</p>
           )}
       </div>
-      
-      <audio ref={audioPlayerRef} hidden />
     </div>
   );
 }
