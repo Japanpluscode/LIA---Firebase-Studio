@@ -1,3 +1,4 @@
+
 // src/server.ts
 import { createServer } from 'http';
 import { parse } from 'url';
@@ -11,7 +12,8 @@ config();
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
-const port = 3000;
+// Use the PORT environment variable provided by the system, or default to 3000
+const port = parseInt(process.env.PORT || '3000', 10);
 // when using middleware `hostname` and `port` must be provided below
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -132,5 +134,12 @@ app.prepare().then(() => {
 
   server.listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
+  }).on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Error: Port ${port} is already in use. Please stop the other process or specify a different port.`);
+    } else {
+      console.error(err);
+    }
+    process.exit(1);
   });
 });
