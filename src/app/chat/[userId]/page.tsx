@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, use } from 'react';
 import Conversation from '@/components/lia/conversation';
 import { getUser, User } from '@/app/admin/topics/actions';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function ChatPage({ params }: { params: { userId: string } }) {
+export default function ChatPage({ params }: { params: Promise<{ userId: string }> }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { userId } = params;
+  const { userId } = use(params);
 
   useEffect(() => {
     if (userId) {
