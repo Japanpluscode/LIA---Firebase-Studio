@@ -107,6 +107,40 @@ export default function Conversation({
     }
   }, [isAiSpeaking, playNextAudioChunk]);
 
+  const startListening = useCallback(async () => {
+    if (isListening || isAiSpeaking) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }});
+      streamRef.current = stream;
+
+      // Start the media recorder
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+           wsRef.current.send(event.data);
+        }
+      };
+      
+      mediaRecorderRef.current.start(STREAMING_LATENCY); // Send data in chunks
+      setIsListening(true);
+      
+      // Initialize audio context for playback if not already
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
+
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Microphone Access Denied',
+        description: 'Please enable microphone permissions in your browser settings.',
+      });
+      setIsListening(false);
+    }
+  }, [isListening, isAiSpeaking, toast]);
 
   const startConversation = useCallback(async () => {
     setIsProcessing(true);
@@ -158,41 +192,6 @@ export default function Conversation({
     }
     setIsListening(false);
   }, []);
-
-  const startListening = useCallback(async () => {
-    if (isListening || isAiSpeaking) return;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }});
-      streamRef.current = stream;
-
-      // Start the media recorder
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-           wsRef.current.send(event.data);
-        }
-      };
-      
-      mediaRecorderRef.current.start(STREAMING_LATENCY); // Send data in chunks
-      setIsListening(true);
-      
-      // Initialize audio context for playback if not already
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
-      }
-
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Microphone Access Denied',
-        description: 'Please enable microphone permissions in your browser settings.',
-      });
-      setIsListening(false);
-    }
-  }, [isListening, isAiSpeaking, toast]);
 
   // Clean up WebSocket on component unmount
   useEffect(() => {
