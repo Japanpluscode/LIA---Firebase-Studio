@@ -40,11 +40,12 @@ const nextConfig: NextConfig = {
   // This is to allow the Next.js dev server to accept requests from the
   // Firebase Studio development environment.
   experimental: {
-    allowedDevOrigins: [
+    // No longer needed here
+  },
+  allowedDevOrigins: [
       'https://*.cloudworkstations.dev',
       'https://*.firebase.studio',
-    ],
-  },
+  ],
   // Required for custom server with websockets
   webpack: (config, { isServer, dev }) => {
     if (isServer && dev) {
