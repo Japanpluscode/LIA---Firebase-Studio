@@ -12,15 +12,21 @@ const STREAMING_LATENCY = 500; // The lower, the more real-time, but riskier for
 
 const LiaAvatar = () => (
   <svg
-    className="absolute inset-0 w-full h-full text-primary" // inherits theme color
+    className="absolute inset-0 w-full h-full"
     viewBox="0 0 100 100"
     xmlns="http://www.w3.org/2000/svg"
     aria-label="L.I.A. Avatar"
   >
     <defs>
       <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-        <stop offset="70%" stopColor="currentColor" stopOpacity="0.75" />
-        <stop offset="95%" stopColor="currentColor" stopOpacity="0" />
+        <stop
+          offset="70%"
+          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0.75}}
+        />
+        <stop
+          offset="95%"
+          style={{stopColor: 'hsl(var(--primary))', stopOpacity: 0}}
+        />
       </radialGradient>
       <clipPath id="circleClip">
         <circle cx="50" cy="50" r="40" />
@@ -41,7 +47,7 @@ const LiaAvatar = () => (
       cy="50"
       r="40"
       fill="none"
-      stroke="currentColor"
+      stroke="hsl(var(--primary))"
       strokeWidth="1"
     />
   </svg>
@@ -74,17 +80,11 @@ export default function Conversation({
         const audioData = audioQueueRef.current.shift();
         if (!audioData) return;
 
-        const ab = audioData.buffer.slice(
-          audioData.byteOffset,
-          audioData.byteOffset + audioData.byteLength
-        );
-
-        audioContextRef.current.decodeAudioData(ab)
+        const audioBuffer = audioContextRef.current.decodeAudioData(audioData.buffer)
             .then(buffer => {
-                if (!audioContextRef.current) return;
-                const source = audioContextRef.current.createBufferSource();
+                const source = audioContextRef.current!.createBufferSource();
                 source.buffer = buffer;
-                source.connect(audioContextRef.current.destination);
+                source.connect(audioContextRef.current!.destination);
                 source.onended = () => {
                     setIsAiSpeaking(false);
                     if (audioQueueRef.current.length > 0) {
@@ -99,19 +99,8 @@ export default function Conversation({
     }
   }, []);
 
-  const handleSocketMessage = useCallback(async (event: MessageEvent) => {
-    let arrayBuf: ArrayBuffer;
-
-    if (event.data instanceof ArrayBuffer) {
-      arrayBuf = event.data;
-    } else if (event.data instanceof Blob) {
-      arrayBuf = await event.data.arrayBuffer();
-    } else {
-      console.warn('Unexpected WebSocket message type:', typeof event.data);
-      return;
-    }
-
-    const audioChunk = new Uint8Array(arrayBuf);
+  const handleSocketMessage = useCallback((event: MessageEvent) => {
+    const audioChunk = new Uint8Array(event.data);
     audioQueueRef.current.push(audioChunk);
     if (!isAiSpeaking) {
         playNextAudioChunk();
@@ -125,6 +114,7 @@ export default function Conversation({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }});
       streamRef.current = stream;
 
+      // Start the media recorder
       mediaRecorderRef.current = new MediaRecorder(stream);
       
       mediaRecorderRef.current.ondataavailable = (event) => {
@@ -133,9 +123,10 @@ export default function Conversation({
         }
       };
       
-      mediaRecorderRef.current.start(STREAMING_LATENCY);
+      mediaRecorderRef.current.start(STREAMING_LATENCY); // Send data in chunks
       setIsListening(true);
       
+      // Initialize audio context for playback if not already
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
       }
@@ -158,13 +149,13 @@ export default function Conversation({
     const wsUrl = `${proto}//${host}/api/conversation`;
     
     const socket = new WebSocket(wsUrl);
-    socket.binaryType = 'arraybuffer'; // Important: Ensure we get ArrayBuffers
 
     socket.onopen = () => {
       console.log('WebSocket connected');
       wsRef.current = socket;
       setConversationStarted(true);
       setIsProcessing(false);
+      // Automatically start listening once connected
       startListening();
     };
 
@@ -202,6 +193,7 @@ export default function Conversation({
     setIsListening(false);
   }, []);
 
+  // Clean up WebSocket on component unmount
   useEffect(() => {
     return () => {
       if (wsRef.current) {
@@ -245,7 +237,7 @@ export default function Conversation({
           onClick={handleButtonClick}
           disabled={currentButtonState === 'processing' || currentButtonState === 'speaking'}
           className={cn(
-            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 overflow-hidden',
+            'relative rounded-full w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
             {
               'cursor-pointer hover:opacity-90': currentButtonState === 'start' || currentButtonState === 'listening' || currentButtonState === 'idle',
               'cursor-not-allowed opacity-80': currentButtonState === 'processing' || currentButtonState === 'speaking',
