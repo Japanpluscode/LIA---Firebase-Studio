@@ -1,25 +1,13 @@
-
-import type {NextConfig} from 'next';
+// next.config.ts - Corrected Configuration
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Image optimization
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'placehold.co',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'picsum.photos',
+        hostname: 'firebasestorage.googleapis.com',
         port: '',
         pathname: '/**',
       },
@@ -28,28 +16,33 @@ const nextConfig: NextConfig = {
         hostname: 'i.imgur.com',
         port: '',
         pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'firebasestorage.googleapis.com',
-        port: '',
-        pathname: '/**',
-      },
+      }
     ],
   },
-  // This is to allow the Next.js dev server to accept requests from the
-  // Firebase Studio development environment.
-  allowedDevOrigins: [
-      'https://*.cloudworkstations.dev',
-      'https://*.firebase.studio',
-  ],
-  // Required for custom server with websockets
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals.push('ws', '@google-cloud/vertexai');
-    }
-    return config;
-  },
-};
+  
+  // Server external packages (moved from experimental)
+  serverExternalPackages: ['@google-cloud/vertexai', 'ws'],
+  
+  // Development environment support
+  ...(process.env.NODE_ENV === 'development' && {
+    allowedDevOrigins: [
+      '*firebase.studio',
+      '*.cloudworkstations.dev'
+    ]
+  }),
 
-export default nextConfig;
+  // Experimental features (now empty, but keeping structure)
+  experimental: {
+    // Add any future experimental features here
+  },
+
+  // Disable webpack cache in development to prevent worker errors
+  ...(process.env.NODE_ENV === 'development' && {
+    webpack: (config: any) => {
+      config.cache = false;
+      return config;
+    }
+  })
+}
+
+export default nextConfig
