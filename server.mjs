@@ -3,10 +3,6 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { parse } from 'url';
 import next from 'next';
-import { config } from 'dotenv';
-
-// Load environment variables from .env file
-config();
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
@@ -16,16 +12,7 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-if (!GEMINI_API_KEY) {
-  console.error('Error: GEMINI_API_KEY environment variable is not set.');
-  process.exit(1);
-}
-
-// Note: The v1beta version of the Gemini API is used here for compatibility with some environments.
-// For the latest features, you might switch to v1alpha, but v1beta is often more stable.
-const GEMINI_WS_URL = `wss://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`;
-
+const GEMINI_WS_URL = `wss://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-native-audio-preview-09-2025:streamGenerateContent?key=${GEMINI_API_KEY}`;
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
@@ -33,9 +20,9 @@ app.prepare().then(() => {
       const parsedUrl = parse(req.url, true);
       await handle(req, res, parsedUrl);
     } catch (err) {
-      console.error('Error handling HTTP request:', err);
+      console.error('Error:', err);
       res.statusCode = 500;
-      res.end('Internal Server Error');
+      res.end('error');
     }
   });
 
@@ -49,83 +36,86 @@ app.prepare().then(() => {
         wss.emit('connection', ws, request);
       });
     } else {
-      console.log(`Socket destroyed for path: ${pathname}`);
       socket.destroy();
     }
   });
 
   wss.on('connection', (clientWs) => {
-    console.log('Client WebSocket connected.');
-    let googleStream;
+    console.log('Client connected');
+    let geminiWs = null;
 
     clientWs.on('message', async (data) => {
-        const message = JSON.parse(data);
+      const message = JSON.parse(data.toString());
+      
+      if (message.type === 'setup') {
+        // Connect to Gemini
+        geminiWs = new (await import('ws')).WebSocket(GEMINI_WS_URL);
 
-        if (message.type === 'setup') {
-            try {
-                const { VertexAI } = await import('@google-cloud/vertexai');
-                const vertex_ai = new VertexAI({ project: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, location: 'us-central1' });
-                const generativeModel = vertex_ai.getGenerativeModel({
-                    model: 'gemini-1.5-flash-001',
-                    systemInstruction: {
-                      role: 'system',
-                      parts: [{ text: message.systemInstruction }],
-                    },
-                });
-
-                googleStream = await generativeModel.startChat({});
-                clientWs.send(JSON.stringify({ type: 'ready' }));
-                console.log('Gemini Chat session started and ready.');
-
-            } catch (err) {
-                console.error('Failed to initialize Vertex AI or start chat:', err);
-                clientWs.send(JSON.stringify({ type: 'error', message: 'Failed to start AI session.' }));
+        geminiWs.on('open', () => {
+          console.log('Connected to Gemini');
+          
+          const setupMsg = {
+            model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
+            generationConfig: {
+              responseMimeType: 'audio/pcm',
+            },
+            systemInstruction: {
+              parts: [{ text: message.systemInstruction || 'You are a helpful English teacher.' }]
             }
-        } else if (message.type === 'audio' && googleStream) {
-            try {
-                const audioAsBase64 = message.data;
-                const result = await googleStream.sendMessageStream([
-                    { inlineData: { mimeType: 'audio/webm', data: audioAsBase64 } }
-                ]);
-                
-                for await (const item of result.stream) {
-                    if (item.candidates && item.candidates[0].content && item.candidates[0].content.parts) {
-                        const textPart = item.candidates[0].content.parts.find(part => part.text);
-                         if (textPart) {
-                            // This implementation sends text back to the client.
-                            // To send audio, a TTS step would be needed here.
-                            // For now, we are building towards a full audio-in, audio-out solution.
-                         }
-                    }
-                }
-            } catch(e) {
-                console.error("Error sending audio to Gemini:", e);
+          };
+
+          geminiWs.send(JSON.stringify(setupMsg));
+          clientWs.send(JSON.stringify({ type: 'ready' }));
+        });
+
+        geminiWs.on('message', (geminiData) => {
+          const response = JSON.parse(geminiData);
+          
+          if (response.modelTurn?.parts) {
+            for (const part of response.modelTurn.parts) {
+              if (part.inlineData?.data) {
+                clientWs.send(JSON.stringify({
+                  type: 'audio',
+                  data: part.inlineData.data
+                }));
+              }
             }
-        } else if (message.type === 'turn_complete') {
-             // In a full implementation, this signals the end of the user's speech turn.
-             // We would process the collected audio here. For now, it's a placeholder.
-        }
-    });
+          }
 
-    clientWs.on('close', () => {
-        console.log('Client WebSocket disconnected.');
-        // No specific stream to end here in the new model, sessions are managed differently.
-    });
+          if (response.turnComplete) {
+            clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+          }
+        });
 
-    clientWs.on('error', (error) => {
-        console.error('Client WebSocket error:', error);
+        geminiWs.on('error', (err) => {
+          console.error('Gemini error:', err);
+          clientWs.send(JSON.stringify({ type: 'error', message: err.message }));
+        });
+
+        clientWs.on('close', () => {
+          if (geminiWs) geminiWs.close();
+          console.log('Client disconnected');
+        });
+      }
+
+      if (message.type === 'audio' && geminiWs) {
+        geminiWs.send(JSON.stringify({
+          mediaChunks: [{
+            data: message.data,
+            mimeType: 'audio/pcm;rate=16000'
+          }]
+        }));
+      }
+
+      if (message.type === 'turn_complete' && geminiWs) {
+        geminiWs.send(JSON.stringify({
+          turnComplete: true
+        }));
+      }
     });
   });
 
   server.listen(port, hostname, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
-  }).on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Error: Port ${port} is already in use. Please stop the other process or specify a different port.`);
-      process.exit(1);
-    } else {
-      console.error(err);
-      process.exit(1);
-    }
   });
 });
