@@ -1,48 +1,76 @@
-// next.config.ts - Corrected Configuration
-import type { NextConfig } from 'next'
-
-const nextConfig: NextConfig = {
-  // Image optimization
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'firebasestorage.googleapis.com',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'i.imgur.com',
-        port: '',
-        pathname: '/**',
-      }
-    ],
+{
+  "name": "nextn",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.mjs",
+    "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
+    "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
-  
-  // Server external packages (moved from experimental)
-  serverExternalPackages: ['@google-cloud/vertexai', 'ws'],
-  
-  // Development environment support
-  ...(process.env.NODE_ENV === 'development' && {
-    allowedDevOrigins: [
-      '*firebase.studio',
-      '*.cloudworkstations.dev'
-    ]
-  }),
-
-  // Experimental features (now empty, but keeping structure)
-  experimental: {
-    // Add any future experimental features here
+  "dependencies": {
+    "@genkit-ai/googleai": "^1.14.1",
+    "@genkit-ai/next": "^1.14.1",
+    "@google-cloud/vertexai": "^1.2.0",
+    "@google/generative-ai": "^0.24.1",
+    "@hookform/resolvers": "^4.1.3",
+    "@radix-ui/react-accordion": "^1.2.3",
+    "@radix-ui/react-alert-dialog": "^1.1.6",
+    "@radix-ui/react-avatar": "^1.1.3",
+    "@radix-ui/react-checkbox": "^1.1.4",
+    "@radix-ui/react-collapsible": "^1.1.11",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-dropdown-menu": "^2.1.6",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-menubar": "^1.1.6",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-progress": "^1.1.2",
+    "@radix-ui/react-radio-group": "^1.2.3",
+    "@radix-ui/react-scroll-area": "^1.2.3",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-separator": "^1.1.2",
+    "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.1.3",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@radix-ui/react-toast": "^1.2.6",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.5.0",
+    "embla-carousel-react": "^8.6.0",
+    "firebase": "^11.9.1",
+    "genkit": "^1.14.1",
+    "lucide-react": "^0.475.0",
+    "minimist": "^1.2.8",
+    "next": "15.3.3",
+    "patch-package": "^8.0.0",
+    "react": "^18.3.1",
+    "react-day-picker": "^8.10.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.54.2",
+    "recharts": "^2.15.1",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.16.2",
+    "wav": "^1.0.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2"
   },
-
-  // Disable webpack cache in development to prevent worker errors
-  ...(process.env.NODE_ENV === 'development' && {
-    webpack: (config: any) => {
-      config.cache = false;
-      return config;
-    }
-  })
+  "devDependencies": {
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/wav": "^1.0.3",
+    "@types/ws": "^8.5.11",
+    "genkit-cli": "^1.14.1",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
 }
-
-export default nextConfig
