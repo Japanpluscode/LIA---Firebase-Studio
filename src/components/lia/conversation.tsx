@@ -22,8 +22,7 @@ const LiaAvatar = () => (
 
 interface ConversationProps {
   userId: string;
-  userName: string; // userName is passed from the page
-  // userProfile and topics are fetched inside the component now
+  userName: string;
 }
 
 export default function Conversation({ userId, userName }: ConversationProps) {
@@ -32,13 +31,13 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -64,19 +63,19 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/live`;
-    
+
     console.log('Connecting to:', wsUrl);
-    
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log('WebSocket connected');
       setIsConnected(true);
-      
+
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
       const systemInstruction = `You are L.I.A., a friendly English teacher. Keep responses brief (2-3 sentences). Only discuss: ${topicList}. Student: ${userName || 'Student'}`;
-      
+
       ws.send(JSON.stringify({
         type: 'setup',
         systemInstruction
@@ -85,16 +84,16 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      
+
       if (message.type === 'ready') {
         setStatus('Ready! Click to speak');
         toast({ title: 'Connected', description: 'L.I.A. is ready' });
       }
-      
+
       if (message.type === 'audio') {
         playAudio(message.data);
       }
-      
+
       if (message.type === 'turn_complete') {
         setIsSpeaking(false);
         setStatus('Your turn - click to speak');
@@ -118,7 +117,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     if (isSpeaking) return;
     setIsSpeaking(true);
     setStatus('L.I.A. is speaking...');
-    
+
     try {
       if (!audioContextRef.current) {
         // Gemini audio output is 24kHz
@@ -127,22 +126,22 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
-      
+
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      
+
       // The server sends raw PCM, so we need to wrap it in a WAV header to be decodable
       const wavBuffer = createWavBuffer(bytes.buffer);
       const audioBuffer = await audioContextRef.current.decodeAudioData(wavBuffer);
-      
+
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContextRef.current.destination);
       source.start();
-      
+
       source.onended = () => {
         setIsSpeaking(false);
         if (isConnected) {
@@ -157,7 +156,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const startListening = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           sampleRate: 16000,
@@ -165,22 +164,22 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           noiseSuppression: true
         }
       });
-      
+
       streamRef.current = stream;
-      
+
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       }
        if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
-      
+
       const source = audioContextRef.current.createMediaStreamSource(stream);
       streamSourceRef.current = source;
-      
+
       const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current = processor;
-      
+
       processor.onaudioprocess = (e) => {
         if (wsRef.current?.readyState === WebSocket.OPEN && isListening) {
           const inputData = e.inputBuffer.getChannelData(0);
@@ -190,26 +189,23 @@ export default function Conversation({ userId, userName }: ConversationProps) {
             let s = Math.max(-1, Math.min(1, inputData[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
-          
+
           const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-          
+
           wsRef.current.send(JSON.stringify({
             type: 'audio',
             data: base64
           }));
         }
       };
-      
+
       source.connect(processor);
       // We connect to the destination to provide mic feedback to the user, but mute it.
       processor.connect(audioContextRef.current.destination);
-      if(audioContextRef.current.destination.gain) {
-        audioContextRef.current.destination.gain.value = 0;
-      }
-      
+
       setIsListening(true);
       setStatus('Listening...');
-      
+
       toast({ title: 'Listening', description: 'Speak now' });
     } catch (error) {
       console.error('Microphone error:', error);
@@ -230,11 +226,11 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         scriptProcessorRef.current.disconnect();
         scriptProcessorRef.current = null;
     }
-    
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
     }
-    
+
     setIsListening(false);
     setStatus('Processing...');
   }, []);
@@ -259,7 +255,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       if (audioContextRef.current) audioContextRef.current.close();
     };
   }, []);
-  
+
   // Helper function to create a WAV buffer from raw PCM data
   function createWavBuffer(pcmData: ArrayBuffer): ArrayBuffer {
       const sampleRate = 24000;
@@ -268,7 +264,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       const dataSize = pcmData.byteLength;
       const blockAlign = (numChannels * bitsPerSample) / 8;
       const byteRate = sampleRate * blockAlign;
-      
+
       const buffer = new ArrayBuffer(44 + dataSize);
       const view = new DataView(buffer);
 
@@ -319,13 +315,13 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         )}
       >
         <LiaAvatar />
-        
+
         {isListening && !isSpeaking && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <Mic className="w-12 h-12 text-white animate-pulse" />
           </div>
         )}
-        
+
         {isSpeaking && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <Volume2 className="w-12 h-12 text-white animate-pulse" />
