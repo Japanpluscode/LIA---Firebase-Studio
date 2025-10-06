@@ -3,7 +3,6 @@ import { getFirestore, Firestore } from 'firebase-admin/firestore';
 
 let app: App;
 
-// Initialize Firebase Admin only if it hasn't been initialized yet
 if (!getApps().length) {
   app = initializeApp({
     credential: cert({

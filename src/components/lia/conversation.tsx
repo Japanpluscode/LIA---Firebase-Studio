@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Mic, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { getTopics } from '@/app/admin/topics/actions'; // ← Import server action
 
 const LiaAvatar = () => (
   <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -41,7 +42,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Fetch topics when the component mounts
+    // Fetch topics when the component mounts using server action
     const fetchTopics = async () => {
       try {
         const topics = await getTopics(userId);
@@ -337,24 +338,4 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       </div>
     </div>
   );
-}
-
-// These functions were moved from actions.ts to be self-contained in the component
-// as they are only used here.
-import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-
-async function getTopics(userId: string) {
-  try {
-    const topicsCollection = collection(db, 'users', userId, 'topics');
-    const topicsSnapshot = await getDocs(topicsCollection);
-    const topics = topicsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as {id: string; name: string; enabled: boolean}[];
-    return topics;
-  } catch (error) {
-    console.error('Error getting topics:', error);
-    return [];
-  }
 }
