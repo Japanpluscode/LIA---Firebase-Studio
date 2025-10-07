@@ -422,7 +422,9 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       <div className="mt-8 text-center h-16">
         <p className="text-xl text-white font-medium">{status}</p>
         <p className="text-sm text-white/60 mt-2">
-          {isConnected ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` : 'Real-time conversation with Gemini'}
+  {isConnected 
+    ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` 
+    : 'Your AI Language Learning Assistant'}
         </p>
       </div>
     </div>
