@@ -1,4 +1,4 @@
-// server.mjs - Gemini Live API with correct audio specs
+// server.mjs - Fixed Gemini message handling
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -50,7 +50,6 @@ app.prepare().then(() => {
         console.log('📨 Type:', message.type);
 
         if (message.type === 'setup') {
-          // Gemini Live API WebSocket endpoint
           const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
           
           geminiWs = new WebSocket(geminiUrl);
@@ -58,7 +57,6 @@ app.prepare().then(() => {
           geminiWs.on('open', () => {
             console.log('🤖 Gemini Live connected');
             
-            // Setup message for Live API
             const setup = {
               setup: {
                 model: "models/gemini-2.0-flash-exp",
@@ -88,59 +86,66 @@ app.prepare().then(() => {
             try {
               const msg = JSON.parse(geminiData.toString());
               
-              // Setup complete
+              // Log ALL message types from Gemini
+              console.log('🎤 FROM GEMINI:', JSON.stringify(msg, null, 2).substring(0, 500));
+              
               if (msg.setupComplete) {
                 console.log('✅ Gemini ready');
                 isGeminiReady = true;
-                clientWs.send(JSON.stringify({ type: 'ready' }));
+                if (clientWs.readyState === WebSocket.OPEN) {
+                  clientWs.send(JSON.stringify({ type: 'ready' }));
+                }
               }
 
-              // Handle server content (responses)
               if (msg.serverContent) {
+                console.log('📦 Server content received');
                 const modelTurn = msg.serverContent.modelTurn;
                 
                 if (modelTurn?.parts) {
+                  console.log('🎵 Parts found:', modelTurn.parts.length);
+                  
                   for (const part of modelTurn.parts) {
-                    // Audio response (24kHz PCM from Gemini)
-                    if (part.inlineData?.mimeType === 'audio/pcm') {
-                      console.log('🔊 Audio response received');
-                      clientWs.send(JSON.stringify({
-                        type: 'audio',
-                        data: part.inlineData.data,
-                        mimeType: 'audio/pcm' // 24kHz from Gemini
-                      }));
+                    if (part.inlineData) {
+                      console.log('🔊 Audio response! MIME:', part.inlineData.mimeType, 'Size:', part.inlineData.data?.length || 0);
+                      
+                      if (clientWs.readyState === WebSocket.OPEN) {
+                        clientWs.send(JSON.stringify({
+                          type: 'audio',
+                          data: part.inlineData.data,
+                          mimeType: part.inlineData.mimeType || 'audio/pcm'
+                        }));
+                        console.log('✅ Audio forwarded to client');
+                      }
                     }
                     
-                    // Text response (if any)
                     if (part.text) {
-                      console.log('💬 Text:', part.text.substring(0, 100));
+                      console.log('💬 Text:', part.text);
                     }
                   }
                 }
 
-                // Turn complete
                 if (msg.serverContent.turnComplete) {
-                  console.log('✅ Turn complete');
-                  clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+                  console.log('✅ Turn complete from Gemini');
+                  if (clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+                  }
                 }
-              }
-
-              // Handle tool calls if needed
-              if (msg.toolCall) {
-                console.log('🔧 Tool call:', msg.toolCall);
               }
 
             } catch (err) {
               console.error('❌ Parse error:', err.message);
+              console.error('Raw data:', geminiData.toString().substring(0, 200));
             }
           });
 
           geminiWs.on('error', (err) => {
             console.error('❌ Gemini error:', err.message);
-            clientWs.send(JSON.stringify({ 
-              type: 'error', 
-              message: err.message 
-            }));
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ 
+                type: 'error', 
+                message: err.message 
+              }));
+            }
           });
 
           geminiWs.on('close', (code, reason) => {
@@ -148,29 +153,27 @@ app.prepare().then(() => {
           });
         }
 
-        // Forward audio to Gemini (16kHz PCM input)
         else if (message.type === 'audio' && geminiWs && isGeminiReady) {
           if (geminiWs.readyState === WebSocket.OPEN) {
             const audioInput = {
               realtimeInput: {
                 mediaChunks: [{
-                  data: message.data, // Base64 encoded PCM 16kHz
-                  mimeType: "audio/pcm" // Live API expects just "audio/pcm"
+                  data: message.data,
+                  mimeType: "audio/pcm"
                 }]
               }
             };
             
             geminiWs.send(JSON.stringify(audioInput));
-            console.log('🎤 Audio sent to Gemini');
+            // Reduced logging for audio chunks
           } else {
-            console.warn('⚠️ Gemini not ready, state:', geminiWs.readyState);
+            console.warn('⚠️ Gemini not open:', geminiWs.readyState);
           }
         }
 
-        // End of user turn
         else if (message.type === 'turn_complete' && geminiWs && isGeminiReady) {
+          console.log('📨 Turn complete from client');
           if (geminiWs.readyState === WebSocket.OPEN) {
-            // Send empty audio chunk to signal end
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
@@ -179,7 +182,7 @@ app.prepare().then(() => {
                 }]
               }
             }));
-            console.log('✅ Turn end sent');
+            console.log('✅ Turn end sent to Gemini');
           }
         }
 
