@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --watch --max-old-space-size=4096 src/server.ts",
+    "dev": "node server.mjs",
     "build": "next build",
-    "start": "tsx src/server.ts",
+    "start": "node server.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
