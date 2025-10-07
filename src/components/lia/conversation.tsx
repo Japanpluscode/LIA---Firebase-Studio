@@ -38,7 +38,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const isListeningRef = useRef(false); // ← Use ref instead of state for audio processing
+  const isListeningRef = useRef(false);
 
   const { toast } = useToast();
 
@@ -61,15 +61,15 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       return;
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/live`;
+    const wsUrl = `${protocol}//${window.location.host}/api/conversation`;
 
-    console.log('Connecting to:', wsUrl);
+    console.log('🔗 Connecting to:', wsUrl);
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected');
       setIsConnected(true);
 
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
@@ -79,10 +79,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         type: 'setup',
         systemInstruction
       }));
+      console.log('📤 Sent setup message');
     };
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
+      console.log('📨 Received:', message.type);
 
       if (message.type === 'ready') {
         setStatus('Ready! Click to speak');
@@ -90,23 +92,30 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       }
 
       if (message.type === 'audio') {
+        console.log('🔊 Playing audio response');
         playAudio(message.data);
       }
 
       if (message.type === 'turn_complete') {
+        console.log('✅ Turn complete');
         setIsSpeaking(false);
         setStatus('Your turn - click to speak');
+      }
+
+      if (message.type === 'error') {
+        console.error('❌ Server error:', message.message);
+        toast({ title: 'Error', description: message.message, variant: 'destructive' });
       }
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('❌ WebSocket error:', error);
       setStatus('Connection error');
       toast({ title: 'Connection Error', variant: 'destructive' });
     };
 
     ws.onclose = () => {
-      console.log('WebSocket closed');
+      console.log('🔌 WebSocket closed');
       setIsConnected(false);
       setStatus('Disconnected');
     };
@@ -118,20 +127,25 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     setStatus('L.I.A. is speaking...');
 
     try {
+      // Create or reuse AudioContext with native sample rate for best compatibility
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        console.log('🎵 AudioContext created, sample rate:', audioContextRef.current.sampleRate);
       }
+      
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
 
+      // Decode base64 to binary
       const binaryString = atob(base64Data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      const wavBuffer = createWavBuffer(bytes.buffer);
+      // Create WAV buffer (Gemini sends 24kHz PCM)
+      const wavBuffer = createWavBuffer(bytes.buffer, 24000);
       const audioBuffer = await audioContextRef.current.decodeAudioData(wavBuffer);
 
       const source = audioContextRef.current.createBufferSource();
@@ -140,14 +154,16 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       source.start();
 
       source.onended = () => {
+        console.log('🔇 Audio playback ended');
         setIsSpeaking(false);
         if (isConnected) {
           setStatus('Your turn - click to speak');
         }
       };
     } catch (error) {
-      console.error('Audio playback error:', error);
+      console.error('❌ Audio playback error:', error);
       setIsSpeaking(false);
+      setStatus('Playback error');
     }
   }, [isSpeaking, isConnected]);
 
@@ -158,15 +174,19 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           channelCount: 1,
           sampleRate: 16000,
           echoCancellation: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          autoGainControl: true
         }
       });
   
       streamRef.current = stream;
   
+      // Create or reuse AudioContext with native sample rate
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        console.log('🎵 AudioContext created for recording, sample rate:', audioContextRef.current.sampleRate);
       }
+      
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
@@ -174,20 +194,23 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       const source = audioContextRef.current.createMediaStreamSource(stream);
       streamSourceRef.current = source;
   
-      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+      // Use smaller buffer for lower latency
+      const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1);
       scriptProcessorRef.current = processor;
   
       processor.onaudioprocess = (e) => {
         if (wsRef.current?.readyState === WebSocket.OPEN && isListeningRef.current) {
           const inputData = e.inputBuffer.getChannelData(0);
+          
+          // Convert Float32 to Int16 PCM
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             let s = Math.max(-1, Math.min(1, inputData[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
   
+          // Encode to base64
           const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-          console.log('📤 Sending audio chunk, size:', base64.length);
   
           wsRef.current.send(JSON.stringify({
             type: 'audio',
@@ -196,7 +219,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         }
       };
   
-      // Create a muted gain node to enable processing without audible feedback
+      // Create a muted gain node to enable processing without feedback
       const gainNode = audioContextRef.current.createGain();
       gainNode.gain.value = 0;
   
@@ -211,7 +234,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       toast({ title: 'Listening', description: 'Speak now' });
       console.log('🎤 Started listening');
     } catch (error) {
-      console.error('Microphone error:', error);
+      console.error('❌ Microphone error:', error);
       toast({ title: 'Error', description: 'Microphone access denied', variant: 'destructive' });
     }
   }, [toast]);
@@ -219,7 +242,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const stopListening = useCallback(() => {
     console.log('🛑 Stopping listening');
     
-    isListeningRef.current = false; // Set ref first
+    isListeningRef.current = false;
     
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -264,8 +287,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     };
   }, []);
 
-  function createWavBuffer(pcmData: ArrayBuffer): ArrayBuffer {
-    const sampleRate = 24000;
+  // Create WAV buffer from raw PCM data
+  function createWavBuffer(pcmData: ArrayBuffer, sampleRate: number): ArrayBuffer {
     const numChannels = 1;
     const bitsPerSample = 16;
     const dataSize = pcmData.byteLength;
@@ -275,20 +298,26 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     const buffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(buffer);
 
+    // RIFF header
     writeString(view, 0, 'RIFF');
     view.setUint32(4, 36 + dataSize, true);
     writeString(view, 8, 'WAVE');
+    
+    // fmt chunk
     writeString(view, 12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
+    view.setUint16(20, 1, true); // PCM
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, byteRate, true);
     view.setUint16(32, blockAlign, true);
     view.setUint16(34, bitsPerSample, true);
+    
+    // data chunk
     writeString(view, 36, 'data');
     view.setUint32(40, dataSize, true);
 
+    // Copy PCM data
     const pcmView = new Uint8Array(pcmData);
     const dataView = new Uint8Array(buffer, 44);
     dataView.set(pcmView);

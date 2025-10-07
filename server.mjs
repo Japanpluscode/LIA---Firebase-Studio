@@ -1,3 +1,4 @@
+// server.mjs - Gemini Live API with correct audio specs
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -15,25 +16,20 @@ if (!GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY not set");
 }
 
-console.log('🚀 Starting L.I.A. Server...');
+console.log('🚀 Starting L.I.A. Live API Server...');
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
-    try {
-      const parsedUrl = parse(req.url, true);
-      await handle(req, res, parsedUrl);
-    } catch (err) {
-      console.error('Error:', err);
-      res.statusCode = 500;
-      res.end('error');
-    }
+    const parsedUrl = parse(req.url, true);
+    await handle(req, res, parsedUrl);
   });
 
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
-    const { pathname } = parse(request.url);
-    if (pathname === '/api/live') {
+    const { pathname } = parse(request.url || '');
+    
+    if (pathname === '/api/conversation') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
@@ -42,133 +38,168 @@ app.prepare().then(() => {
     }
   });
 
-  wss.on('connection', async (clientWs) => {
+  wss.on('connection', (clientWs) => {
     console.log('✅ Client connected');
+    
     let geminiWs = null;
-    let pingInterval = null;
-
-    // Keep connection alive with ping/pong
-    pingInterval = setInterval(() => {
-      if (clientWs.readyState === WebSocket.OPEN) {
-        clientWs.ping();
-      }
-    }, 30000); // Ping every 30 seconds
-
-    clientWs.on('pong', () => {
-      console.log('📡 Client pong received');
-    });
+    let isGeminiReady = false;
 
     clientWs.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString());
-        console.log('📨 Received message type:', message.type);
+        console.log('📨 Type:', message.type);
 
         if (message.type === 'setup') {
-          const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
-          geminiWs = new WebSocket(wsUrl);
+          // Gemini Live API WebSocket endpoint
+          const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+          
+          geminiWs = new WebSocket(geminiUrl);
 
           geminiWs.on('open', () => {
-            console.log('🤖 Connected to Gemini Live');
+            console.log('🤖 Gemini Live connected');
             
-            geminiWs.send(JSON.stringify({
+            // Setup message for Live API
+            const setup = {
               setup: {
-                model: 'models/gemini-2.0-flash-exp',
+                model: "models/gemini-2.0-flash-exp",
                 generation_config: {
-                  response_modalities: ['AUDIO'],
+                  response_modalities: ["AUDIO"],
                   speech_config: {
                     voice_config: {
-                      prebuilt_voice_config: { voice_name: 'Kore' }
+                      prebuilt_voice_config: {
+                        voice_name: "Aoede"
+                      }
                     }
                   }
                 },
                 system_instruction: {
-                  parts: [{ text: message.systemInstruction || 'You are L.I.A.' }]
+                  parts: [{
+                    text: message.systemInstruction || "You are L.I.A., a friendly language learning assistant."
+                  }]
                 }
               }
-            }));
-            
-            clientWs.send(JSON.stringify({ type: 'ready' }));
-            console.log('✅ Sent ready to client');
+            };
+
+            geminiWs.send(JSON.stringify(setup));
+            console.log('📤 Setup sent');
           });
 
           geminiWs.on('message', (geminiData) => {
             try {
-              const response = JSON.parse(geminiData);
-              console.log('🎤 Received from Gemini:', Object.keys(response));
+              const msg = JSON.parse(geminiData.toString());
               
-              if (response.serverContent?.modelTurn?.parts) {
-                for (const part of response.serverContent.modelTurn.parts) {
-                  if (part.inlineData?.data) {
-                    console.log('🔊 Sending audio to client');
-                    clientWs.send(JSON.stringify({
-                      type: 'audio',
-                      data: part.inlineData.data
-                    }));
+              // Setup complete
+              if (msg.setupComplete) {
+                console.log('✅ Gemini ready');
+                isGeminiReady = true;
+                clientWs.send(JSON.stringify({ type: 'ready' }));
+              }
+
+              // Handle server content (responses)
+              if (msg.serverContent) {
+                const modelTurn = msg.serverContent.modelTurn;
+                
+                if (modelTurn?.parts) {
+                  for (const part of modelTurn.parts) {
+                    // Audio response (24kHz PCM from Gemini)
+                    if (part.inlineData?.mimeType === 'audio/pcm') {
+                      console.log('🔊 Audio response received');
+                      clientWs.send(JSON.stringify({
+                        type: 'audio',
+                        data: part.inlineData.data,
+                        mimeType: 'audio/pcm' // 24kHz from Gemini
+                      }));
+                    }
+                    
+                    // Text response (if any)
+                    if (part.text) {
+                      console.log('💬 Text:', part.text.substring(0, 100));
+                    }
                   }
+                }
+
+                // Turn complete
+                if (msg.serverContent.turnComplete) {
+                  console.log('✅ Turn complete');
+                  clientWs.send(JSON.stringify({ type: 'turn_complete' }));
                 }
               }
 
-              if (response.serverContent?.turnComplete) {
-                console.log('✅ Turn complete');
-                clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+              // Handle tool calls if needed
+              if (msg.toolCall) {
+                console.log('🔧 Tool call:', msg.toolCall);
               }
-            } catch (e) {
-              console.error('Parse error:', e);
+
+            } catch (err) {
+              console.error('❌ Parse error:', err.message);
             }
           });
 
           geminiWs.on('error', (err) => {
-            console.error('❌ Gemini error:', err);
-            clientWs.send(JSON.stringify({ type: 'error', message: err.message }));
+            console.error('❌ Gemini error:', err.message);
+            clientWs.send(JSON.stringify({ 
+              type: 'error', 
+              message: err.message 
+            }));
           });
 
-          geminiWs.on('close', () => {
-            console.log('🔌 Gemini connection closed');
+          geminiWs.on('close', (code, reason) => {
+            console.log(`🔌 Gemini closed: ${code} ${reason || 'no reason'}`);
           });
         }
 
-        if (message.type === 'audio' && geminiWs) {
-          console.log('🎤 Forwarding audio to Gemini');
+        // Forward audio to Gemini (16kHz PCM input)
+        else if (message.type === 'audio' && geminiWs && isGeminiReady) {
           if (geminiWs.readyState === WebSocket.OPEN) {
+            const audioInput = {
+              realtimeInput: {
+                mediaChunks: [{
+                  data: message.data, // Base64 encoded PCM 16kHz
+                  mimeType: "audio/pcm" // Live API expects just "audio/pcm"
+                }]
+              }
+            };
+            
+            geminiWs.send(JSON.stringify(audioInput));
+            console.log('🎤 Audio sent to Gemini');
+          } else {
+            console.warn('⚠️ Gemini not ready, state:', geminiWs.readyState);
+          }
+        }
+
+        // End of user turn
+        else if (message.type === 'turn_complete' && geminiWs && isGeminiReady) {
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            // Send empty audio chunk to signal end
             geminiWs.send(JSON.stringify({
               realtimeInput: {
-                mediaChunks: [{ data: message.data, mimeType: 'audio/pcm;rate=16000' }]
+                mediaChunks: [{
+                  data: "",
+                  mimeType: "audio/pcm"
+                }]
               }
             }));
-          } else {
-            console.error('❌ Gemini WebSocket not open');
+            console.log('✅ Turn end sent');
           }
         }
 
-        if (message.type === 'turn_complete' && geminiWs) {
-          console.log('✅ Turn complete from client');
-          if (geminiWs.readyState === WebSocket.OPEN) {
-            geminiWs.send(JSON.stringify({
-              clientContent: { turnComplete: true }
-            }));
-          }
-        }
-      } catch (error) {
-        console.error('❌ Error processing message:', error);
+      } catch (err) {
+        console.error('❌ Error:', err.message);
       }
     });
 
     clientWs.on('close', () => {
       console.log('🔌 Client disconnected');
-      if (pingInterval) {
-        clearInterval(pingInterval);
-      }
-      if (geminiWs) {
-        geminiWs.close();
-      }
+      if (geminiWs) geminiWs.close();
     });
 
     clientWs.on('error', (err) => {
-      console.error('❌ Client WebSocket error:', err);
+      console.error('❌ Client error:', err.message);
     });
   });
 
-  server.listen(port, hostname, () => {
+  server.listen(port, hostname, (err) => {
+    if (err) throw err;
     console.log(`✅ Ready on http://${hostname}:${port}`);
   });
 });
