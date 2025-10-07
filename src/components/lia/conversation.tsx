@@ -161,24 +161,23 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           noiseSuppression: true
         }
       });
-
+  
       streamRef.current = stream;
-
+  
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       }
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
-
+  
       const source = audioContextRef.current.createMediaStreamSource(stream);
       streamSourceRef.current = source;
-
+  
       const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
       scriptProcessorRef.current = processor;
-
+  
       processor.onaudioprocess = (e) => {
-        // Use ref instead of state to avoid closure issues
         if (wsRef.current?.readyState === WebSocket.OPEN && isListeningRef.current) {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = new Int16Array(inputData.length);
@@ -186,26 +185,29 @@ export default function Conversation({ userId, userName }: ConversationProps) {
             let s = Math.max(-1, Math.min(1, inputData[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
-
+  
           const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-
-          console.log('📤 Sending audio chunk, size:', base64.length); // Debug log
-
+          console.log('📤 Sending audio chunk, size:', base64.length);
+  
           wsRef.current.send(JSON.stringify({
             type: 'audio',
             data: base64
           }));
         }
       };
-
+  
+      // Create a muted gain node to enable processing without audible feedback
+      const gainNode = audioContextRef.current.createGain();
+      gainNode.gain.value = 0;
+  
       source.connect(processor);
-      // DON'T connect to destination - this causes feedback!
-      // processor.connect(audioContextRef.current.destination);
-
-      isListeningRef.current = true; // Set ref
-      setIsListening(true); // Set state for UI
+      processor.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+  
+      isListeningRef.current = true;
+      setIsListening(true);
       setStatus('Listening...');
-
+  
       toast({ title: 'Listening', description: 'Speak now' });
       console.log('🎤 Started listening');
     } catch (error) {
