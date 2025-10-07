@@ -26,6 +26,74 @@ interface ConversationProps {
   userName: string;
 }
 
+// Audio utility functions matching Google's implementation
+function encode(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function decode(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function createBlob(data: Float32Array): { data: string; mimeType: string } {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    // Convert float32 -1 to 1 to int16 -32768 to 32767
+    int16[i] = data[i] * 32768;
+  }
+
+  return {
+    data: encode(new Uint8Array(int16.buffer)),
+    mimeType: 'audio/pcm;rate=16000',
+  };
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const buffer = ctx.createBuffer(
+    numChannels,
+    data.length / 2 / numChannels,
+    sampleRate,
+  );
+
+  const dataInt16 = new Int16Array(data.buffer);
+  const l = dataInt16.length;
+  const dataFloat32 = new Float32Array(l);
+  for (let i = 0; i < l; i++) {
+    dataFloat32[i] = dataInt16[i] / 32768.0;
+  }
+  
+  // Extract interleaved channels
+  if (numChannels === 1) {
+    buffer.copyToChannel(dataFloat32, 0);
+  } else {
+    for (let i = 0; i < numChannels; i++) {
+      const channel = dataFloat32.filter(
+        (_, index) => index % numChannels === i,
+      );
+      buffer.copyToChannel(channel, i);
+    }
+  }
+
+  return buffer;
+}
+
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -34,11 +102,14 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [userTopics, setUserTopics] = useState<any[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isListeningRef = useRef(false);
+  const nextStartTimeRef = useRef(0);
+  const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
   const { toast } = useToast();
 
@@ -102,6 +173,11 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         setStatus('Your turn - click to speak');
       }
 
+      if (message.type === 'interrupted') {
+        console.log('⚠️ Interrupted - stopping all audio');
+        stopAllAudioSources();
+      }
+
       if (message.type === 'error') {
         console.error('❌ Server error:', message.message);
         toast({ title: 'Error', description: message.message, variant: 'destructive' });
@@ -121,51 +197,75 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     };
   }, [userTopics, userName, toast]);
 
+  const stopAllAudioSources = useCallback(() => {
+    for (const source of audioSourcesRef.current.values()) {
+      try {
+        source.stop();
+      } catch (e) {
+        // Already stopped
+      }
+      audioSourcesRef.current.delete(source);
+    }
+    nextStartTimeRef.current = 0;
+  }, []);
+
   const playAudio = useCallback(async (base64Data: string) => {
-    if (isSpeaking) return;
     setIsSpeaking(true);
     setStatus('L.I.A. is speaking...');
 
     try {
-      // Create or reuse AudioContext with native sample rate for best compatibility
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        console.log('🎵 AudioContext created, sample rate:', audioContextRef.current.sampleRate);
+      // Create separate output context for 24kHz
+      if (!outputAudioContextRef.current) {
+        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+          sampleRate: 24000 
+        });
+        console.log('🎵 Output AudioContext created at 24kHz');
       }
       
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
+      if (outputAudioContextRef.current.state === 'suspended') {
+        await outputAudioContextRef.current.resume();
       }
 
-      // Decode base64 to binary
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      // Decode using Google's method
+      const decodedData = decode(base64Data);
+      const audioBuffer = await decodeAudioData(
+        decodedData,
+        outputAudioContextRef.current,
+        24000,
+        1
+      );
 
-      // Create WAV buffer (Gemini sends 24kHz PCM)
-      const wavBuffer = createWavBuffer(bytes.buffer, 24000);
-      const audioBuffer = await audioContextRef.current.decodeAudioData(wavBuffer);
+      // Schedule audio playback
+      nextStartTimeRef.current = Math.max(
+        nextStartTimeRef.current,
+        outputAudioContextRef.current.currentTime
+      );
 
-      const source = audioContextRef.current.createBufferSource();
+      const source = outputAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
-      source.start();
-
-      source.onended = () => {
-        console.log('🔇 Audio playback ended');
-        setIsSpeaking(false);
-        if (isConnected) {
-          setStatus('Your turn - click to speak');
+      source.connect(outputAudioContextRef.current.destination);
+      
+      source.addEventListener('ended', () => {
+        audioSourcesRef.current.delete(source);
+        if (audioSourcesRef.current.size === 0) {
+          console.log('🔇 All audio playback ended');
+          setIsSpeaking(false);
+          if (isConnected) {
+            setStatus('Your turn - click to speak');
+          }
         }
-      };
+      });
+
+      source.start(nextStartTimeRef.current);
+      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+      audioSourcesRef.current.add(source);
+
     } catch (error) {
       console.error('❌ Audio playback error:', error);
       setIsSpeaking(false);
       setStatus('Playback error');
     }
-  }, [isSpeaking, isConnected]);
+  }, [isConnected]);
 
   const startListening = useCallback(async () => {
     try {
@@ -181,51 +281,48 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   
       streamRef.current = stream;
   
-      // Create or reuse AudioContext with native sample rate
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        console.log('🎵 AudioContext created for recording, sample rate:', audioContextRef.current.sampleRate);
+      // Create separate input context for 16kHz
+      if (!inputAudioContextRef.current) {
+        inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+          sampleRate: 16000 
+        });
+        console.log('🎵 Input AudioContext created at 16kHz');
       }
       
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
+      if (inputAudioContextRef.current.state === 'suspended') {
+        await inputAudioContextRef.current.resume();
       }
   
-      const source = audioContextRef.current.createMediaStreamSource(stream);
+      const source = inputAudioContextRef.current.createMediaStreamSource(stream);
       streamSourceRef.current = source;
   
-      // Use smaller buffer for lower latency
-      const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1);
+      // Use smaller buffer like Google's sample (256)
+      const bufferSize = 256;
+      const processor = inputAudioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
       scriptProcessorRef.current = processor;
   
       processor.onaudioprocess = (e) => {
         if (wsRef.current?.readyState === WebSocket.OPEN && isListeningRef.current) {
-          const inputData = e.inputBuffer.getChannelData(0);
+          const inputBuffer = e.inputBuffer;
+          const pcmData = inputBuffer.getChannelData(0);
           
-          // Convert Float32 to Int16 PCM
-          const pcm16 = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            let s = Math.max(-1, Math.min(1, inputData[i]));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
-  
-          // Encode to base64
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+          // Use Google's createBlob function
+          const audioBlob = createBlob(pcmData);
   
           wsRef.current.send(JSON.stringify({
             type: 'audio',
-            data: base64
+            data: audioBlob.data
           }));
         }
       };
   
-      // Create a muted gain node to enable processing without feedback
-      const gainNode = audioContextRef.current.createGain();
+      // Create a muted gain node
+      const gainNode = inputAudioContextRef.current.createGain();
       gainNode.gain.value = 0;
   
       source.connect(processor);
       processor.connect(gainNode);
-      gainNode.connect(audioContextRef.current.destination);
+      gainNode.connect(inputAudioContextRef.current.destination);
   
       isListeningRef.current = true;
       setIsListening(true);
@@ -267,8 +364,11 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, []);
 
   const handleClick = () => {
-    if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-      audioContextRef.current.resume();
+    if (inputAudioContextRef.current && inputAudioContextRef.current.state === "suspended") {
+      inputAudioContextRef.current.resume();
+    }
+    if (outputAudioContextRef.current && outputAudioContextRef.current.state === "suspended") {
+      outputAudioContextRef.current.resume();
     }
     if (!isConnected) {
       connectWebSocket();
@@ -283,53 +383,10 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     return () => {
       if (wsRef.current) wsRef.current.close();
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      if (audioContextRef.current) audioContextRef.current.close();
+      if (inputAudioContextRef.current) inputAudioContextRef.current.close();
+      if (outputAudioContextRef.current) outputAudioContextRef.current.close();
     };
   }, []);
-
-  // Create WAV buffer from raw PCM data
-  function createWavBuffer(pcmData: ArrayBuffer, sampleRate: number): ArrayBuffer {
-    const numChannels = 1;
-    const bitsPerSample = 16;
-    const dataSize = pcmData.byteLength;
-    const blockAlign = (numChannels * bitsPerSample) / 8;
-    const byteRate = sampleRate * blockAlign;
-
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-
-    // RIFF header
-    writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(view, 8, 'WAVE');
-    
-    // fmt chunk
-    writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
-    
-    // data chunk
-    writeString(view, 36, 'data');
-    view.setUint32(40, dataSize, true);
-
-    // Copy PCM data
-    const pcmView = new Uint8Array(pcmData);
-    const dataView = new Uint8Array(buffer, 44);
-    dataView.set(pcmView);
-
-    return buffer;
-  }
-
-  function writeString(view: DataView, offset: number, str: string) {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  }
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">

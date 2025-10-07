@@ -1,4 +1,4 @@
-// server.mjs - Fixed Gemini message handling
+// server.mjs - Corrected for @google/genai v1.22.0
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -50,13 +50,15 @@ app.prepare().then(() => {
         console.log('📨 Type:', message.type);
 
         if (message.type === 'setup') {
+          // Use raw WebSocket but with corrected message format from Google's sample
           const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
           
           geminiWs = new WebSocket(geminiUrl);
 
           geminiWs.on('open', () => {
-            console.log('🤖 Gemini Live connected');
+            console.log('🤖 Gemini connected');
             
+            // Match Google's sample setup format exactly
             const setup = {
               setup: {
                 model: "models/gemini-2.0-flash-exp",
@@ -72,7 +74,7 @@ app.prepare().then(() => {
                 },
                 system_instruction: {
                   parts: [{
-                    text: message.systemInstruction || "You are L.I.A., a friendly language learning assistant."
+                    text: message.systemInstruction || "You are L.I.A., a friendly language learning assistant. Keep responses brief and conversational."
                   }]
                 }
               }
@@ -85,104 +87,90 @@ app.prepare().then(() => {
           geminiWs.on('message', (geminiData) => {
             try {
               const msg = JSON.parse(geminiData.toString());
-              
-              // Log ALL message types from Gemini
-              console.log('🎤 FROM GEMINI:', JSON.stringify(msg, null, 2).substring(0, 500));
+              console.log('🎤 FROM GEMINI:', Object.keys(msg).join(', '));
               
               if (msg.setupComplete) {
                 console.log('✅ Gemini ready');
                 isGeminiReady = true;
-                if (clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(JSON.stringify({ type: 'ready' }));
-                }
+                clientWs.send(JSON.stringify({ type: 'ready' }));
               }
 
               if (msg.serverContent) {
-                console.log('📦 Server content received');
-                const modelTurn = msg.serverContent.modelTurn;
+                const parts = msg.serverContent.modelTurn?.parts || [];
+                console.log('📦 Parts:', parts.length);
                 
-                if (modelTurn?.parts) {
-                  console.log('🎵 Parts found:', modelTurn.parts.length);
+                for (const part of parts) {
+                  if (part.inlineData?.mimeType?.startsWith('audio/')) {
+                    console.log('🔊 Audio! Size:', part.inlineData.data?.substring(0, 50).length);
+                    clientWs.send(JSON.stringify({
+                      type: 'audio',
+                      data: part.inlineData.data,
+                      mimeType: part.inlineData.mimeType
+                    }));
+                  }
                   
-                  for (const part of modelTurn.parts) {
-                    if (part.inlineData) {
-                      console.log('🔊 Audio response! MIME:', part.inlineData.mimeType, 'Size:', part.inlineData.data?.length || 0);
-                      
-                      if (clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.send(JSON.stringify({
-                          type: 'audio',
-                          data: part.inlineData.data,
-                          mimeType: part.inlineData.mimeType || 'audio/pcm'
-                        }));
-                        console.log('✅ Audio forwarded to client');
-                      }
-                    }
-                    
-                    if (part.text) {
-                      console.log('💬 Text:', part.text);
-                    }
+                  if (part.text) {
+                    console.log('💬 Text:', part.text.substring(0, 100));
                   }
                 }
 
                 if (msg.serverContent.turnComplete) {
                   console.log('✅ Turn complete from Gemini');
-                  if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: 'turn_complete' }));
-                  }
+                  clientWs.send(JSON.stringify({ type: 'turn_complete' }));
+                }
+
+                if (msg.serverContent.interrupted) {
+                  console.log('⚠️ Interrupted');
                 }
               }
 
             } catch (err) {
               console.error('❌ Parse error:', err.message);
-              console.error('Raw data:', geminiData.toString().substring(0, 200));
             }
           });
 
           geminiWs.on('error', (err) => {
             console.error('❌ Gemini error:', err.message);
-            if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(JSON.stringify({ 
-                type: 'error', 
-                message: err.message 
-              }));
-            }
+            clientWs.send(JSON.stringify({ 
+              type: 'error', 
+              message: err.message 
+            }));
           });
 
           geminiWs.on('close', (code, reason) => {
-            console.log(`🔌 Gemini closed: ${code} ${reason || 'no reason'}`);
+            console.log(`🔌 Gemini closed: ${code} ${reason || ''}`);
           });
         }
 
+        // Send audio - match Google's format from utils.ts createBlob function
         else if (message.type === 'audio' && geminiWs && isGeminiReady) {
           if (geminiWs.readyState === WebSocket.OPEN) {
             const audioInput = {
               realtimeInput: {
                 mediaChunks: [{
                   data: message.data,
-                  mimeType: "audio/pcm"
+                  mimeType: "audio/pcm;rate=16000"
                 }]
               }
             };
             
             geminiWs.send(JSON.stringify(audioInput));
-            // Reduced logging for audio chunks
-          } else {
-            console.warn('⚠️ Gemini not open:', geminiWs.readyState);
           }
         }
 
         else if (message.type === 'turn_complete' && geminiWs && isGeminiReady) {
           console.log('📨 Turn complete from client');
           if (geminiWs.readyState === WebSocket.OPEN) {
+            // Send empty audio chunk
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
                   data: "",
-                  mimeType: "audio/pcm"
+                  mimeType: "audio/pcm;rate=16000"
                 }]
               }
             }));
-            console.log('✅ Turn end sent to Gemini');
+            console.log('✅ Turn end sent');
           }
         }
 
