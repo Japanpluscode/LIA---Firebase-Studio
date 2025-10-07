@@ -47,9 +47,11 @@ export async function getUser(userId: string): Promise<User | null> {
 
 export async function getUserByEmail(email: string): Promise<User | null> {
   try {
+    const normalizedEmail = email.trim().toLowerCase();
+    
     const querySnapshot = await db
       .collection('users')
-      .where('email', '==', email.toLowerCase())
+      .where('email', '==', normalizedEmail)
       .get();
 
     if (!querySnapshot.empty) {
