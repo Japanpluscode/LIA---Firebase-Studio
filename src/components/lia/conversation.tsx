@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Mic, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { getTopics } from '@/app/admin/topics/actions'; // ← Import server action
+import { getTopics } from '@/app/admin/topics/actions';
 
 const LiaAvatar = () => (
   <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -38,29 +38,27 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isListeningRef = useRef(false); // ← Use ref instead of state for audio processing
 
   const { toast } = useToast();
 
   useEffect(() => {
-    // Fetch topics when the component mounts using server action
     const fetchTopics = async () => {
       try {
         const topics = await getTopics(userId);
         setUserTopics(topics);
       } catch (error) {
         console.error("Failed to fetch topics", error);
-        // Fallback to general conversation if topics fail to load
         setUserTopics([{ name: 'general conversation', enabled: true }]);
       }
     };
     fetchTopics();
   }, [userId]);
 
-
   const connectWebSocket = useCallback(() => {
     if (userTopics.length === 0) {
-        toast({title: "Loading topics...", description: "Please wait a moment."});
-        return;
+      toast({ title: "Loading topics...", description: "Please wait a moment." });
+      return;
     }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/live`;
@@ -104,7 +102,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
       setStatus('Connection error');
-      toast({ title: 'Connection Error', variant: 'destructive'});
+      toast({ title: 'Connection Error', variant: 'destructive' });
     };
 
     ws.onclose = () => {
@@ -121,7 +119,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
     try {
       if (!audioContextRef.current) {
-        // Gemini audio output is 24kHz
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       }
       if (audioContextRef.current.state === 'suspended') {
@@ -134,7 +131,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // The server sends raw PCM, so we need to wrap it in a WAV header to be decodable
       const wavBuffer = createWavBuffer(bytes.buffer);
       const audioBuffer = await audioContextRef.current.decodeAudioData(wavBuffer);
 
@@ -146,7 +142,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       source.onended = () => {
         setIsSpeaking(false);
         if (isConnected) {
-             setStatus('Your turn - click to speak');
+          setStatus('Your turn - click to speak');
         }
       };
     } catch (error) {
@@ -171,7 +167,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       }
-       if (audioContextRef.current.state === 'suspended') {
+      if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
 
@@ -182,9 +178,9 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       scriptProcessorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN && isListening) {
+        // Use ref instead of state to avoid closure issues
+        if (wsRef.current?.readyState === WebSocket.OPEN && isListeningRef.current) {
           const inputData = e.inputBuffer.getChannelData(0);
-          // The data is already linear PCM, we just need to convert to 16-bit
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             let s = Math.max(-1, Math.min(1, inputData[i]));
@@ -192,6 +188,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           }
 
           const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+
+          console.log('📤 Sending audio chunk, size:', base64.length); // Debug log
 
           wsRef.current.send(JSON.stringify({
             type: 'audio',
@@ -201,35 +199,42 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       };
 
       source.connect(processor);
-      // We connect to the destination to provide mic feedback to the user, but mute it.
-      processor.connect(audioContextRef.current.destination);
+      // DON'T connect to destination - this causes feedback!
+      // processor.connect(audioContextRef.current.destination);
 
-      setIsListening(true);
+      isListeningRef.current = true; // Set ref
+      setIsListening(true); // Set state for UI
       setStatus('Listening...');
 
       toast({ title: 'Listening', description: 'Speak now' });
+      console.log('🎤 Started listening');
     } catch (error) {
       console.error('Microphone error:', error);
       toast({ title: 'Error', description: 'Microphone access denied', variant: 'destructive' });
     }
-  }, [toast, isListening]);
+  }, [toast]);
 
   const stopListening = useCallback(() => {
+    console.log('🛑 Stopping listening');
+    
+    isListeningRef.current = false; // Set ref first
+    
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    if(streamSourceRef.current) {
-        streamSourceRef.current.disconnect();
-        streamSourceRef.current = null;
+    if (streamSourceRef.current) {
+      streamSourceRef.current.disconnect();
+      streamSourceRef.current = null;
     }
-    if(scriptProcessorRef.current){
-        scriptProcessorRef.current.disconnect();
-        scriptProcessorRef.current = null;
+    if (scriptProcessorRef.current) {
+      scriptProcessorRef.current.disconnect();
+      scriptProcessorRef.current = null;
     }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
+      console.log('✅ Sent turn_complete');
     }
 
     setIsListening(false);
@@ -238,7 +243,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const handleClick = () => {
     if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume();
+      audioContextRef.current.resume();
     }
     if (!isConnected) {
       connectWebSocket();
@@ -257,49 +262,43 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     };
   }, []);
 
-  // Helper function to create a WAV buffer from raw PCM data
   function createWavBuffer(pcmData: ArrayBuffer): ArrayBuffer {
-      const sampleRate = 24000;
-      const numChannels = 1;
-      const bitsPerSample = 16;
-      const dataSize = pcmData.byteLength;
-      const blockAlign = (numChannels * bitsPerSample) / 8;
-      const byteRate = sampleRate * blockAlign;
+    const sampleRate = 24000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const dataSize = pcmData.byteLength;
+    const blockAlign = (numChannels * bitsPerSample) / 8;
+    const byteRate = sampleRate * blockAlign;
 
-      const buffer = new ArrayBuffer(44 + dataSize);
-      const view = new DataView(buffer);
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
 
-      // RIFF header
-      writeString(view, 0, 'RIFF');
-      view.setUint32(4, 36 + dataSize, true);
-      writeString(view, 8, 'WAVE');
-      // fmt chunk
-      writeString(view, 12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true); // PCM
-      view.setUint16(22, numChannels, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, byteRate, true);
-      view.setUint16(32, blockAlign, true);
-      view.setUint16(34, bitsPerSample, true);
-      // data chunk
-      writeString(view, 36, 'data');
-      view.setUint32(40, dataSize, true);
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
 
-      // Write PCM data
-      const pcmView = new Uint8Array(pcmData);
-      const dataView = new Uint8Array(buffer, 44);
-      dataView.set(pcmView);
+    const pcmView = new Uint8Array(pcmData);
+    const dataView = new Uint8Array(buffer, 44);
+    dataView.set(pcmView);
 
-      return buffer;
+    return buffer;
   }
 
   function writeString(view: DataView, offset: number, str: string) {
-      for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset + i, str.charCodeAt(i));
-      }
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
   }
-
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
@@ -333,7 +332,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       <div className="mt-8 text-center h-16">
         <p className="text-xl text-white font-medium">{status}</p>
         <p className="text-sm text-white/60 mt-2">
-            {isConnected ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` : 'Real-time conversation with Gemini'}
+          {isConnected ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` : 'Real-time conversation with Gemini'}
         </p>
       </div>
     </div>
