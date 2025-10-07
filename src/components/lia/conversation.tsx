@@ -142,6 +142,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     ws.onopen = () => {
       console.log('✅ WebSocket connected');
       setIsConnected(true);
+      setStatus('Connecting to L.I.A...');
 
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
       const systemInstruction = `You are L.I.A., a friendly English teacher. Keep responses brief (2-3 sentences). Only discuss: ${topicList}. Student: ${userName || 'Student'}`;
@@ -158,8 +159,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       console.log('📨 Received:', message.type);
 
       if (message.type === 'ready') {
-        setStatus('Ready! Click to speak');
-        toast({ title: 'Connected', description: 'L.I.A. is ready' });
+        setStatus('Listening...');
+        toast({ title: 'Ready!', description: 'Start speaking now' });
       }
 
       if (message.type === 'audio') {
@@ -170,7 +171,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       if (message.type === 'turn_complete') {
         console.log('✅ Turn complete');
         setIsSpeaking(false);
-        setStatus('Your turn - click to speak');
+        setStatus('Listening...');
       }
 
       if (message.type === 'interrupted') {
@@ -193,7 +194,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     ws.onclose = () => {
       console.log('🔌 WebSocket closed');
       setIsConnected(false);
-      setStatus('Disconnected');
+      setStatus('Click to start');
     };
   }, [userTopics, userName, toast]);
 
@@ -251,7 +252,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           console.log('🔇 All audio playback ended');
           setIsSpeaking(false);
           if (isConnected) {
-            setStatus('Your turn - click to speak');
+            setStatus('Listening...');
           }
         }
       });
@@ -263,7 +264,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     } catch (error) {
       console.error('❌ Audio playback error:', error);
       setIsSpeaking(false);
-      setStatus('Playback error');
+      setStatus('Error - Click to restart');
     }
   }, [isConnected]);
 
@@ -332,7 +333,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       console.log('🎤 Started listening');
     } catch (error) {
       console.error('❌ Microphone error:', error);
-      toast({ title: 'Error', description: 'Microphone access denied', variant: 'destructive' });
+      toast({ title: 'Microphone Error', description: 'Please allow microphone access', variant: 'destructive' });
+      setStatus('Click to start');
     }
   }, [toast]);
 
