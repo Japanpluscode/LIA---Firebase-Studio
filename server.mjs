@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
 import next from 'next';
 
@@ -45,14 +45,27 @@ app.prepare().then(() => {
   wss.on('connection', async (clientWs) => {
     console.log('✅ Client connected');
     let geminiWs = null;
+    let pingInterval = null;
+
+    // Keep connection alive with ping/pong
+    pingInterval = setInterval(() => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.ping();
+      }
+    }, 30000); // Ping every 30 seconds
+
+    clientWs.on('pong', () => {
+      console.log('📡 Client pong received');
+    });
 
     clientWs.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString());
+        console.log('📨 Received message type:', message.type);
 
         if (message.type === 'setup') {
           const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
-          geminiWs = new (await import('ws')).WebSocket(wsUrl);
+          geminiWs = new WebSocket(wsUrl);
 
           geminiWs.on('open', () => {
             console.log('🤖 Connected to Gemini Live');
@@ -75,15 +88,18 @@ app.prepare().then(() => {
             }));
             
             clientWs.send(JSON.stringify({ type: 'ready' }));
+            console.log('✅ Sent ready to client');
           });
 
           geminiWs.on('message', (geminiData) => {
             try {
               const response = JSON.parse(geminiData);
+              console.log('🎤 Received from Gemini:', Object.keys(response));
               
               if (response.serverContent?.modelTurn?.parts) {
                 for (const part of response.serverContent.modelTurn.parts) {
                   if (part.inlineData?.data) {
+                    console.log('🔊 Sending audio to client');
                     clientWs.send(JSON.stringify({
                       type: 'audio',
                       data: part.inlineData.data
@@ -93,6 +109,7 @@ app.prepare().then(() => {
               }
 
               if (response.serverContent?.turnComplete) {
+                console.log('✅ Turn complete');
                 clientWs.send(JSON.stringify({ type: 'turn_complete' }));
               }
             } catch (e) {
@@ -101,32 +118,53 @@ app.prepare().then(() => {
           });
 
           geminiWs.on('error', (err) => {
-            console.error('Gemini error:', err);
+            console.error('❌ Gemini error:', err);
             clientWs.send(JSON.stringify({ type: 'error', message: err.message }));
+          });
+
+          geminiWs.on('close', () => {
+            console.log('🔌 Gemini connection closed');
           });
         }
 
         if (message.type === 'audio' && geminiWs) {
-          geminiWs.send(JSON.stringify({
-            realtimeInput: {
-              mediaChunks: [{ data: message.data, mimeType: 'audio/pcm;rate=16000' }]
-            }
-          }));
+          console.log('🎤 Forwarding audio to Gemini');
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            geminiWs.send(JSON.stringify({
+              realtimeInput: {
+                mediaChunks: [{ data: message.data, mimeType: 'audio/pcm;rate=16000' }]
+              }
+            }));
+          } else {
+            console.error('❌ Gemini WebSocket not open');
+          }
         }
 
         if (message.type === 'turn_complete' && geminiWs) {
-          geminiWs.send(JSON.stringify({
-            clientContent: { turnComplete: true }
-          }));
+          console.log('✅ Turn complete from client');
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            geminiWs.send(JSON.stringify({
+              clientContent: { turnComplete: true }
+            }));
+          }
         }
       } catch (error) {
-        console.error('Error:', error);
+        console.error('❌ Error processing message:', error);
       }
     });
 
     clientWs.on('close', () => {
-      console.log('Client disconnected');
-      if (geminiWs) geminiWs.close();
+      console.log('🔌 Client disconnected');
+      if (pingInterval) {
+        clearInterval(pingInterval);
+      }
+      if (geminiWs) {
+        geminiWs.close();
+      }
+    });
+
+    clientWs.on('error', (err) => {
+      console.error('❌ Client WebSocket error:', err);
     });
   });
 
