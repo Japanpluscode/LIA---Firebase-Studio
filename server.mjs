@@ -1,4 +1,4 @@
-// server.mjs - Complete with feedback support
+// server.mjs - Complete with interruption support
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -16,7 +16,7 @@ if (!GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY not set");
 }
 
-console.log('🚀 Starting L.I.A. Live API Server...');
+console.log('🚀 Starting LIA Live API Server...');
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
@@ -79,7 +79,7 @@ app.prepare().then(() => {
                 },
                 system_instruction: {
                   parts: [{
-                    text: message.systemInstruction || "You are L.I.A., a friendly conversation partner."
+                    text: message.systemInstruction || "You are LIA, a friendly conversation partner."
                   }]
                 }
               }
@@ -131,7 +131,7 @@ app.prepare().then(() => {
                 }
 
                 if (msg.serverContent.interrupted) {
-                  console.log('⚠️ Interrupted');
+                  console.log('⚠️ Gemini was interrupted');
                   clientWs.send(JSON.stringify({ type: 'interrupted' }));
                 }
               }
@@ -170,6 +170,26 @@ app.prepare().then(() => {
             geminiWs.send(JSON.stringify(audioInput));
           } else {
             console.warn('⚠️ Gemini not ready');
+          }
+        }
+
+        // User interrupted LIA
+        else if (message.type === 'user_interrupted' && geminiWs && isGeminiReady) {
+          console.log('🤚 User interrupted LIA - stopping current response');
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            // Send turn complete to stop Gemini's current response
+            geminiWs.send(JSON.stringify({
+              realtimeInput: {
+                mediaChunks: [{
+                  data: "",
+                  mimeType: "audio/pcm;rate=16000"
+                }]
+              }
+            }));
+            
+            // Notify client that interruption was processed
+            clientWs.send(JSON.stringify({ type: 'interrupted' }));
+            console.log('✅ Interruption signal sent to Gemini');
           }
         }
 
