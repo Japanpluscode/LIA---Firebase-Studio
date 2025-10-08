@@ -4,6 +4,15 @@ import { getDB } from '@/lib/firebase';
 
 const db = getDB();
 
+// Export User type
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  profile?: string;
+  createdAt: string;
+};
+
 export async function getTopics(userId: string) {
   try {
     const topicsSnapshot = await db
@@ -79,7 +88,7 @@ export async function getUsers() {
     return usersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    }));
+    })) as User[];
   } catch (error) {
     console.error('Error fetching users:', error);
     return [];
@@ -111,7 +120,7 @@ export async function getUser(userId: string) {
     return {
       id: userDoc.id,
       ...userDoc.data()
-    };
+    } as User;
   } catch (error) {
     console.error('Error fetching user:', error);
     return null;
@@ -134,7 +143,7 @@ export async function getUserByEmail(email: string) {
     return {
       id: userDoc.id,
       ...userDoc.data()
-    };
+    } as User;
   } catch (error) {
     console.error('Error fetching user by email:', error);
     return null;
