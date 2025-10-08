@@ -116,7 +116,16 @@ export async function addUser(name: string, email: string, profile: string) {
       createdAt: new Date().toISOString()
     });
 
-    return { success: true, id: userRef.id };
+    // Return the newly created user
+    const newUser: User = {
+      id: userRef.id,
+      name,
+      email,
+      profile,
+      createdAt: new Date().toISOString()
+    };
+
+    return { success: true, id: userRef.id, newUser };
   } catch (error) {
     console.error('Error adding user:', error);
     return { success: false, error: 'Failed to add user' };
