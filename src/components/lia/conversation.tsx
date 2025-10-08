@@ -128,7 +128,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(15 * 60); // 15 minutes
+  const [timeRemaining, setTimeRemaining] = useState(15 * 60);
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
@@ -142,7 +142,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const nextStartTimeRef = useRef(0);
   const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const conversationTranscriptRef = useRef<string[]>([]);
 
   const { toast } = useToast();
 
@@ -153,14 +152,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
           
-          // Trigger feedback at 1 minute remaining (14 minutes elapsed)
           if (newTime === 60 && !isFeedbackTime) {
             console.log('⏰ Time for feedback!');
             setIsFeedbackTime(true);
             requestFeedback();
           }
           
-          // End conversation at 0
           if (newTime <= 0) {
             endConversation();
             return 0;
@@ -178,7 +175,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     }
   }, [conversationStarted, timeRemaining, isFeedbackTime]);
 
-  // Format time as MM:SS
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -199,7 +195,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, [userId]);
 
   const requestFeedback = useCallback(() => {
-    console.log('⏰ Requesting feedback from L.I.A.');
+    console.log('⏰ Requesting feedback from LIA');
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ 
         type: 'request_feedback'
@@ -207,7 +203,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       setStatus('Preparing your feedback...');
       toast({ 
         title: 'Feedback Time!', 
-        description: 'L.I.A. is preparing your feedback...' 
+        description: 'LIA is preparing your feedback...' 
       });
     }
   }, [toast]);
@@ -216,7 +212,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     console.log('⏹️ Ending conversation');
     setConversationStarted(false);
     
-    // Stop listening
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -233,7 +228,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     isListeningRef.current = false;
     setIsListening(false);
     
-    // Close WebSocket
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -262,11 +256,23 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       console.log('✅ WebSocket connected');
       setIsConnected(true);
       setConversationStarted(true);
-      setStatus('Connecting to L.I.A...');
+      setStatus('Connecting to LIA...');
 
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
       
-      const systemInstruction = `You are L.I.A., a friendly conversation partner helping ${userName || 'your friend'} practice English naturally.
+      const systemInstruction = `You are LIA (without punctuation), a friendly Brazilian-Portuguese and English speaking conversation partner helping ${userName || 'your friend'} practice English naturally.
+
+LANGUAGE SUPPORT:
+- Your friend is Brazilian and learning English
+- If they say something in Portuguese, understand it and respond naturally in English
+- When they use Portuguese, gently incorporate the English version in your response
+- Example: If they say "Eu gosto de viajar", respond: "Oh you like to travel! That's awesome! Where do you like to go?"
+- NEVER correct their Portuguese or English explicitly - just model the correct form naturally
+
+INTERRUPTION HANDLING:
+- If you detect the user starting to speak while you're talking, STOP immediately
+- Keep responses SHORT (1-2 sentences) to allow natural back-and-forth
+- Let them interrupt you - it makes conversation feel natural
 
 IMPORTANT - NEVER MENTION GRAMMAR:
 - NEVER say things like "that's wrong", "the correct grammar is", "you should use present perfect", etc.
@@ -277,20 +283,21 @@ YOUR ROLE:
 Just have a natural, friendly chat about: ${topicList}
 
 CONVERSATION STYLE:
-- Keep responses SHORT (2-3 sentences maximum)
+- Keep responses VERY SHORT (1-2 sentences maximum)
 - Speak naturally like texting a friend
 - Use contractions (I'm, you're, it's, we'll, can't)
 - Show genuine interest and enthusiasm
-- Ask follow-up questions to keep the conversation flowing
+- Ask follow-up questions to keep conversation flowing
+- Be encouraging when they mix Portuguese and English
 
 HOW TO HELP (WITHOUT TEACHING):
-When your friend says something unclear, just naturally rephrase it in your response:
+When your friend says something unclear or mixes languages, just naturally respond:
 ❌ DON'T: "You should say 'I went' not 'I go'. That's past tense."
 ✅ DO: "Oh cool! So you went there yesterday? How was it?"
 
-Friend says: "I go to beach yesterday"
+Friend says: "Yesterday eu fui na praia"
 You respond: "Nice! So you went to the beach yesterday? Did you swim?"
-(Natural correction without mentioning grammar)
+(Natural response incorporating both languages without correcting)
 
 TOPICS:
 Only chat about: ${topicList}
@@ -301,9 +308,9 @@ When asked for feedback at the end, give honest but encouraging feedback in a fr
 - Mention what they did well
 - Point out 1-2 areas to work on (without using grammar terms)
 - Keep it positive and motivating
-- Example: "You're really getting better at describing things! One thing to work on - try using more past tense words when talking about yesterday. But honestly, you're doing great!"
+- Be brief (3-4 sentences max)
 
-Remember: You're a friend, not a teacher. Keep it fun, natural, and conversational!`;
+Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it fun, natural, conversational, and SHORT!`;
 
       ws.send(JSON.stringify({
         type: 'setup',
@@ -344,8 +351,10 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
       }
 
       if (message.type === 'interrupted') {
-        console.log('⚠️ Interrupted');
+        console.log('⚠️ User interrupted - stopping audio');
         stopAllAudioSources();
+        setIsSpeaking(false);
+        setStatus('Listening...');
       }
 
       if (message.type === 'error') {
@@ -387,7 +396,7 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
   };
 
   const stopAllAudioSources = useCallback(() => {
-    console.log('🛑 Stopping all audio sources');
+    console.log('🛑 Stopping all audio (user interruption)');
     for (const source of audioSourcesRef.current.values()) {
       try {
         source.stop();
@@ -397,15 +406,13 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
       audioSourcesRef.current.delete(source);
     }
     nextStartTimeRef.current = 0;
-    setIsSpeaking(false);
   }, []);
 
   const playAudio = useCallback(async (base64Data: string) => {
     setIsSpeaking(true);
-    setStatus('L.I.A. is speaking...');
+    setStatus('LIA is speaking...');
 
     try {
-      // Use native sample rate for better compatibility
       if (!outputAudioContextRef.current) {
         outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         console.log('🎵 Output AudioContext created, sample rate:', outputAudioContextRef.current.sampleRate);
@@ -421,7 +428,6 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
 
       const currentTime = outputAudioContextRef.current.currentTime;
       
-      // Better scheduling - prevent audio cutting
       if (nextStartTimeRef.current < currentTime + 0.05) {
         nextStartTimeRef.current = currentTime + 0.05;
       }
@@ -447,7 +453,6 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
       source.start(nextStartTimeRef.current);
       console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s`);
       
-      // Add small gap between chunks to prevent speed-up
       nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration + 0.03;
       audioSourcesRef.current.add(source);
 
@@ -460,10 +465,19 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
   }, [isConnected, isFeedbackTime]);
 
   const startListening = useCallback(async () => {
-    // Don't start if in feedback time
     if (isFeedbackTime) {
       console.log('⏰ Feedback time - not starting microphone');
       return;
+    }
+
+    // If LIA is speaking, stop her (user interruption)
+    if (isSpeaking) {
+      console.log('🤚 User interrupting LIA');
+      stopAllAudioSources();
+      // Send interruption signal to server
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'user_interrupted' }));
+      }
     }
 
     try {
@@ -528,7 +542,7 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
       toast({ title: 'Microphone Error', description: 'Please allow microphone access', variant: 'destructive' });
       setStatus('Click to start');
     }
-  }, [toast, isFeedbackTime]);
+  }, [toast, isFeedbackTime, isSpeaking, stopAllAudioSources]);
 
   const stopListening = useCallback(() => {
     console.log('🛑 Stopping listening');
@@ -558,7 +572,6 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
   }, []);
 
   const handleClick = () => {
-    // Don't allow interaction during feedback
     if (isFeedbackTime && isSpeaking) {
       console.log('⏰ Waiting for feedback...');
       return;
@@ -576,6 +589,9 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
       stopListening();
     } else if (!isSpeaking && !isFeedbackTime) {
       startListening();
+    } else if (isSpeaking) {
+      // Allow clicking while LIA speaks to interrupt
+      startListening();
     }
   };
 
@@ -591,7 +607,6 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
-      {/* Timer Display */}
       {conversationStarted && (
         <div className="mb-4 flex items-center gap-2 text-white/80">
           <Clock className="w-5 h-5" />
@@ -612,7 +627,6 @@ Remember: You're a friend, not a teacher. Keep it fun, natural, and conversation
             'ring-4 ring-green-400 scale-105': isListening,
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
             'hover:scale-105': !isSpeaking && isConnected && !isFeedbackTime,
-            'opacity-75 cursor-not-allowed': isSpeaking || (isFeedbackTime && !isListening),
             'ring-4 ring-yellow-400': isFeedbackTime
           }
         )}
