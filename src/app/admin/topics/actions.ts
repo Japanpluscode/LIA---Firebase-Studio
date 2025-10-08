@@ -4,7 +4,7 @@ import { getDB } from '@/lib/firebase';
 
 const db = getDB();
 
-// Export User type
+// Export types
 export type User = {
   id: string;
   name: string;
@@ -13,7 +13,14 @@ export type User = {
   createdAt: string;
 };
 
-export async function getTopics(userId: string) {
+export type Topic = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  createdAt?: string;
+};
+
+export async function getTopics(userId: string): Promise<Topic[]> {
   try {
     const topicsSnapshot = await db
       .collection('users')
@@ -23,7 +30,9 @@ export async function getTopics(userId: string) {
 
     return topicsSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      name: doc.data().name,
+      enabled: doc.data().enabled,
+      createdAt: doc.data().createdAt
     }));
   } catch (error) {
     console.error('Error fetching topics:', error);
@@ -82,13 +91,16 @@ export async function toggleTopic(userId: string, topicId: string, enabled: bool
   }
 }
 
-export async function getUsers() {
+export async function getUsers(): Promise<User[]> {
   try {
     const usersSnapshot = await db.collection('users').get();
     return usersSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
-    })) as User[];
+      name: doc.data().name,
+      email: doc.data().email,
+      profile: doc.data().profile,
+      createdAt: doc.data().createdAt
+    }));
   } catch (error) {
     console.error('Error fetching users:', error);
     return [];
@@ -111,23 +123,27 @@ export async function addUser(name: string, email: string, profile: string) {
   }
 }
 
-export async function getUser(userId: string) {
+export async function getUser(userId: string): Promise<User | null> {
   try {
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return null;
     }
+    const data = userDoc.data();
     return {
       id: userDoc.id,
-      ...userDoc.data()
-    } as User;
+      name: data?.name || '',
+      email: data?.email || '',
+      profile: data?.profile,
+      createdAt: data?.createdAt || ''
+    };
   } catch (error) {
     console.error('Error fetching user:', error);
     return null;
   }
 }
 
-export async function getUserByEmail(email: string) {
+export async function getUserByEmail(email: string): Promise<User | null> {
   try {
     const usersSnapshot = await db
       .collection('users')
@@ -140,10 +156,14 @@ export async function getUserByEmail(email: string) {
     }
 
     const userDoc = usersSnapshot.docs[0];
+    const data = userDoc.data();
     return {
       id: userDoc.id,
-      ...userDoc.data()
-    } as User;
+      name: data?.name || '',
+      email: data?.email || '',
+      profile: data?.profile,
+      createdAt: data?.createdAt || ''
+    };
   } catch (error) {
     console.error('Error fetching user by email:', error);
     return null;
