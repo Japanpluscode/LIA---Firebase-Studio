@@ -36,3 +36,9 @@ export function getDB(): Firestore {
   }
   return firestoreInstance;
 }
+
+// Export db for backward compatibility
+export const db = {
+  collection: (...args: Parameters<Firestore['collection']>) => getDB().collection(...args),
+  doc: (...args: Parameters<Firestore['doc']>) => getDB().doc(...args),
+};
