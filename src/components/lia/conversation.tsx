@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Volume2 } from 'lucide-react';
+import { Mic, Volume2, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { getTopics } from '@/app/admin/topics/actions';
+import { saveConversationFeedback } from '@/app/actions/feedback';
 
 const LiaAvatar = () => (
   <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -26,7 +27,7 @@ interface ConversationProps {
   userName: string;
 }
 
-// Audio utility functions matching Google's implementation
+// Audio utility functions
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -50,7 +51,6 @@ function createBlob(data: Float32Array): { data: string; mimeType: string } {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
-    // Convert float32 -1 to 1 to int16 -32768 to 32767
     int16[i] = data[i] * 32768;
   }
 
@@ -79,7 +79,6 @@ async function decodeAudioData(
     dataFloat32[i] = dataInt16[i] / 32768.0;
   }
   
-  // Extract interleaved channels
   if (numChannels === 1) {
     buffer.copyToChannel(dataFloat32, 0);
   } else {
@@ -94,12 +93,44 @@ async function decodeAudioData(
   return buffer;
 }
 
+function createWavHeader(pcmData: Uint8Array, sampleRate: number, numChannels: number): ArrayBuffer {
+  const dataSize = pcmData.byteLength;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  new Uint8Array(buffer, 44).set(pcmData);
+  return buffer;
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
+  const [timeRemaining, setTimeRemaining] = useState(15 * 60); // 15 minutes
+  const [conversationStarted, setConversationStarted] = useState(false);
+  const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -110,8 +141,49 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const isListeningRef = useRef(false);
   const nextStartTimeRef = useRef(0);
   const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const conversationTranscriptRef = useRef<string[]>([]);
 
   const { toast } = useToast();
+
+  // Timer countdown
+  useEffect(() => {
+    if (conversationStarted && timeRemaining > 0 && !isFeedbackTime) {
+      timerIntervalRef.current = setInterval(() => {
+        setTimeRemaining((prev) => {
+          const newTime = prev - 1;
+          
+          // Trigger feedback at 1 minute remaining (14 minutes elapsed)
+          if (newTime === 60 && !isFeedbackTime) {
+            console.log('⏰ Time for feedback!');
+            setIsFeedbackTime(true);
+            requestFeedback();
+          }
+          
+          // End conversation at 0
+          if (newTime <= 0) {
+            endConversation();
+            return 0;
+          }
+          
+          return newTime;
+        });
+      }, 1000);
+
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+        }
+      };
+    }
+  }, [conversationStarted, timeRemaining, isFeedbackTime]);
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     const fetchTopics = async () => {
@@ -125,6 +197,53 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     };
     fetchTopics();
   }, [userId]);
+
+  const requestFeedback = useCallback(() => {
+    console.log('⏰ Requesting feedback from L.I.A.');
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ 
+        type: 'request_feedback'
+      }));
+      setStatus('Preparing your feedback...');
+      toast({ 
+        title: 'Feedback Time!', 
+        description: 'L.I.A. is preparing your feedback...' 
+      });
+    }
+  }, [toast]);
+
+  const endConversation = useCallback(() => {
+    console.log('⏹️ Ending conversation');
+    setConversationStarted(false);
+    
+    // Stop listening
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (streamSourceRef.current) {
+      streamSourceRef.current.disconnect();
+      streamSourceRef.current = null;
+    }
+    if (scriptProcessorRef.current) {
+      scriptProcessorRef.current.disconnect();
+      scriptProcessorRef.current = null;
+    }
+    
+    isListeningRef.current = false;
+    setIsListening(false);
+    
+    // Close WebSocket
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    
+    setStatus('Session complete! Great work!');
+    toast({ 
+      title: 'Session Complete!', 
+      description: 'Your feedback has been saved.' 
+    });
+  }, [toast]);
 
   const connectWebSocket = useCallback(() => {
     if (userTopics.length === 0) {
@@ -142,14 +261,55 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     ws.onopen = () => {
       console.log('✅ WebSocket connected');
       setIsConnected(true);
+      setConversationStarted(true);
       setStatus('Connecting to L.I.A...');
 
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
-      const systemInstruction = `You are L.I.A., a friendly English teacher. Keep responses brief (2-3 sentences). Only discuss: ${topicList}. Student: ${userName || 'Student'}`;
+      
+      const systemInstruction = `You are L.I.A., a friendly conversation partner helping ${userName || 'your friend'} practice English naturally.
+
+IMPORTANT - NEVER MENTION GRAMMAR:
+- NEVER say things like "that's wrong", "the correct grammar is", "you should use present perfect", etc.
+- NEVER explain grammar rules or mention tenses, verb forms, or grammar terms
+- You're NOT a teacher - you're a supportive friend having a natural conversation
+
+YOUR ROLE:
+Just have a natural, friendly chat about: ${topicList}
+
+CONVERSATION STYLE:
+- Keep responses SHORT (2-3 sentences maximum)
+- Speak naturally like texting a friend
+- Use contractions (I'm, you're, it's, we'll, can't)
+- Show genuine interest and enthusiasm
+- Ask follow-up questions to keep the conversation flowing
+
+HOW TO HELP (WITHOUT TEACHING):
+When your friend says something unclear, just naturally rephrase it in your response:
+❌ DON'T: "You should say 'I went' not 'I go'. That's past tense."
+✅ DO: "Oh cool! So you went there yesterday? How was it?"
+
+Friend says: "I go to beach yesterday"
+You respond: "Nice! So you went to the beach yesterday? Did you swim?"
+(Natural correction without mentioning grammar)
+
+TOPICS:
+Only chat about: ${topicList}
+If they mention other things, gently redirect: "That sounds fun! But tell me more about [topic]..."
+
+FEEDBACK INSTRUCTIONS (ONLY when specifically requested):
+When asked for feedback at the end, give honest but encouraging feedback in a friendly way:
+- Mention what they did well
+- Point out 1-2 areas to work on (without using grammar terms)
+- Keep it positive and motivating
+- Example: "You're really getting better at describing things! One thing to work on - try using more past tense words when talking about yesterday. But honestly, you're doing great!"
+
+Remember: You're a friend, not a teacher. Keep it fun, natural, and conversational!`;
 
       ws.send(JSON.stringify({
         type: 'setup',
-        systemInstruction
+        systemInstruction,
+        userId,
+        userName
       }));
       console.log('📤 Sent setup message');
     };
@@ -168,14 +328,23 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         playAudio(message.data);
       }
 
+      if (message.type === 'feedback') {
+        console.log('📝 Feedback received');
+        saveFeedbackToDatabase(message.feedback);
+      }
+
       if (message.type === 'turn_complete') {
         console.log('✅ Turn complete');
         setIsSpeaking(false);
-        setStatus('Listening...');
+        if (!isFeedbackTime) {
+          setStatus('Listening...');
+        } else {
+          setStatus('Feedback received!');
+        }
       }
 
       if (message.type === 'interrupted') {
-        console.log('⚠️ Interrupted - stopping all audio');
+        console.log('⚠️ Interrupted');
         stopAllAudioSources();
       }
 
@@ -194,20 +363,41 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     ws.onclose = () => {
       console.log('🔌 WebSocket closed');
       setIsConnected(false);
-      setStatus('Click to start');
+      setConversationStarted(false);
+      if (!isFeedbackTime) {
+        setStatus('Click to start');
+      }
     };
-  }, [userTopics, userName, toast]);
+  }, [userTopics, userName, userId, toast, isFeedbackTime]);
+
+  const saveFeedbackToDatabase = async (feedback: string) => {
+    try {
+      await saveConversationFeedback({
+        userId,
+        userName,
+        feedback,
+        topics: userTopics?.filter(t => t.enabled).map(t => t.name),
+        duration: 15 * 60 - timeRemaining,
+        date: new Date().toISOString()
+      });
+      console.log('✅ Feedback saved to database');
+    } catch (error) {
+      console.error('❌ Error saving feedback:', error);
+    }
+  };
 
   const stopAllAudioSources = useCallback(() => {
+    console.log('🛑 Stopping all audio sources');
     for (const source of audioSourcesRef.current.values()) {
       try {
         source.stop();
       } catch (e) {
-        // Already stopped
+        // ignore
       }
       audioSourcesRef.current.delete(source);
     }
     nextStartTimeRef.current = 0;
+    setIsSpeaking(false);
   }, []);
 
   const playAudio = useCallback(async (base64Data: string) => {
@@ -215,32 +405,26 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     setStatus('L.I.A. is speaking...');
 
     try {
-      // Create separate output context for 24kHz
+      // Use native sample rate for better compatibility
       if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
-          sampleRate: 24000 
-        });
-        console.log('🎵 Output AudioContext created at 24kHz');
+        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        console.log('🎵 Output AudioContext created, sample rate:', outputAudioContextRef.current.sampleRate);
       }
       
       if (outputAudioContextRef.current.state === 'suspended') {
         await outputAudioContextRef.current.resume();
       }
 
-      // Decode using Google's method
       const decodedData = decode(base64Data);
-      const audioBuffer = await decodeAudioData(
-        decodedData,
-        outputAudioContextRef.current,
-        24000,
-        1
-      );
+      const wavBuffer = createWavHeader(decodedData, 24000, 1);
+      const audioBuffer = await outputAudioContextRef.current.decodeAudioData(wavBuffer);
 
-      // Schedule audio playback
-      nextStartTimeRef.current = Math.max(
-        nextStartTimeRef.current,
-        outputAudioContextRef.current.currentTime
-      );
+      const currentTime = outputAudioContextRef.current.currentTime;
+      
+      // Better scheduling - prevent audio cutting
+      if (nextStartTimeRef.current < currentTime + 0.05) {
+        nextStartTimeRef.current = currentTime + 0.05;
+      }
 
       const source = outputAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
@@ -249,26 +433,39 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       source.addEventListener('ended', () => {
         audioSourcesRef.current.delete(source);
         if (audioSourcesRef.current.size === 0) {
-          console.log('🔇 All audio playback ended');
+          console.log('🔇 Audio playback ended');
           setIsSpeaking(false);
-          if (isConnected) {
+          nextStartTimeRef.current = 0;
+          if (isConnected && !isFeedbackTime) {
             setStatus('Listening...');
+          } else if (isFeedbackTime) {
+            setStatus('Feedback complete!');
           }
         }
       });
 
       source.start(nextStartTimeRef.current);
-      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+      console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s`);
+      
+      // Add small gap between chunks to prevent speed-up
+      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration + 0.03;
       audioSourcesRef.current.add(source);
 
     } catch (error) {
       console.error('❌ Audio playback error:', error);
       setIsSpeaking(false);
-      setStatus('Error - Click to restart');
+      setStatus('Error');
+      nextStartTimeRef.current = 0;
     }
-  }, [isConnected]);
+  }, [isConnected, isFeedbackTime]);
 
   const startListening = useCallback(async () => {
+    // Don't start if in feedback time
+    if (isFeedbackTime) {
+      console.log('⏰ Feedback time - not starting microphone');
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -282,12 +479,11 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   
       streamRef.current = stream;
   
-      // Create separate input context for 16kHz
       if (!inputAudioContextRef.current) {
         inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
           sampleRate: 16000 
         });
-        console.log('🎵 Input AudioContext created at 16kHz');
+        console.log('🎵 Input AudioContext at 16kHz');
       }
       
       if (inputAudioContextRef.current.state === 'suspended') {
@@ -297,7 +493,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       const source = inputAudioContextRef.current.createMediaStreamSource(stream);
       streamSourceRef.current = source;
   
-      // Use smaller buffer like Google's sample (256)
       const bufferSize = 256;
       const processor = inputAudioContextRef.current.createScriptProcessor(bufferSize, 1, 1);
       scriptProcessorRef.current = processor;
@@ -307,7 +502,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           const inputBuffer = e.inputBuffer;
           const pcmData = inputBuffer.getChannelData(0);
           
-          // Use Google's createBlob function
           const audioBlob = createBlob(pcmData);
   
           wsRef.current.send(JSON.stringify({
@@ -317,7 +511,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         }
       };
   
-      // Create a muted gain node
       const gainNode = inputAudioContextRef.current.createGain();
       gainNode.gain.value = 0;
   
@@ -329,14 +522,13 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       setIsListening(true);
       setStatus('Listening...');
   
-      toast({ title: 'Listening', description: 'Speak now' });
       console.log('🎤 Started listening');
     } catch (error) {
       console.error('❌ Microphone error:', error);
       toast({ title: 'Microphone Error', description: 'Please allow microphone access', variant: 'destructive' });
       setStatus('Click to start');
     }
-  }, [toast]);
+  }, [toast, isFeedbackTime]);
 
   const stopListening = useCallback(() => {
     console.log('🛑 Stopping listening');
@@ -366,6 +558,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, []);
 
   const handleClick = () => {
+    // Don't allow interaction during feedback
+    if (isFeedbackTime && isSpeaking) {
+      console.log('⏰ Waiting for feedback...');
+      return;
+    }
+
     if (inputAudioContextRef.current && inputAudioContextRef.current.state === "suspended") {
       inputAudioContextRef.current.resume();
     }
@@ -376,13 +574,14 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       connectWebSocket();
     } else if (isListening) {
       stopListening();
-    } else if (!isSpeaking) {
+    } else if (!isSpeaking && !isFeedbackTime) {
       startListening();
     }
   };
 
   useEffect(() => {
     return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       if (wsRef.current) wsRef.current.close();
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       if (inputAudioContextRef.current) inputAudioContextRef.current.close();
@@ -392,6 +591,19 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
+      {/* Timer Display */}
+      {conversationStarted && (
+        <div className="mb-4 flex items-center gap-2 text-white/80">
+          <Clock className="w-5 h-5" />
+          <span className="text-lg font-mono">
+            {formatTime(timeRemaining)}
+          </span>
+          {timeRemaining <= 60 && (
+            <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>
+          )}
+        </div>
+      )}
+
       <div
         onClick={handleClick}
         className={cn(
@@ -399,8 +611,9 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           {
             'ring-4 ring-green-400 scale-105': isListening,
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
-            'hover:scale-105': !isSpeaking && isConnected,
-            'opacity-75 cursor-not-allowed': isSpeaking
+            'hover:scale-105': !isSpeaking && isConnected && !isFeedbackTime,
+            'opacity-75 cursor-not-allowed': isSpeaking || (isFeedbackTime && !isListening),
+            'ring-4 ring-yellow-400': isFeedbackTime
           }
         )}
       >
@@ -422,9 +635,9 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       <div className="mt-8 text-center h-16">
         <p className="text-xl text-white font-medium">{status}</p>
         <p className="text-sm text-white/60 mt-2">
-  {isConnected 
-    ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` 
-    : 'Your AI Language Learning Assistant'}
+          {isConnected 
+            ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` 
+            : 'Your AI Language Learning Assistant'}
         </p>
       </div>
     </div>

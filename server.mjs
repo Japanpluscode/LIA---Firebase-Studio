@@ -1,4 +1,4 @@
-// server.mjs - Corrected for @google/genai v1.22.0
+// server.mjs - Complete with feedback support
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -43,6 +43,8 @@ app.prepare().then(() => {
     
     let geminiWs = null;
     let isGeminiReady = false;
+    let currentUserId = null;
+    let currentUserName = null;
 
     clientWs.on('message', async (data) => {
       try {
@@ -50,7 +52,11 @@ app.prepare().then(() => {
         console.log('📨 Type:', message.type);
 
         if (message.type === 'setup') {
-          // Use raw WebSocket but with corrected message format from Google's sample
+          // Store user info
+          currentUserId = message.userId;
+          currentUserName = message.userName;
+
+          // Connect to Gemini
           const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
           
           geminiWs = new WebSocket(geminiUrl);
@@ -58,7 +64,6 @@ app.prepare().then(() => {
           geminiWs.on('open', () => {
             console.log('🤖 Gemini connected');
             
-            // Match Google's sample setup format exactly
             const setup = {
               setup: {
                 model: "models/gemini-2.0-flash-exp",
@@ -74,14 +79,14 @@ app.prepare().then(() => {
                 },
                 system_instruction: {
                   parts: [{
-                    text: message.systemInstruction || "You are L.I.A., a friendly language learning assistant. Keep responses brief and conversational."
+                    text: message.systemInstruction || "You are L.I.A., a friendly conversation partner."
                   }]
                 }
               }
             };
 
             geminiWs.send(JSON.stringify(setup));
-            console.log('📤 Setup sent');
+            console.log('📤 Setup sent to Gemini');
           });
 
           geminiWs.on('message', (geminiData) => {
@@ -97,11 +102,12 @@ app.prepare().then(() => {
 
               if (msg.serverContent) {
                 const parts = msg.serverContent.modelTurn?.parts || [];
-                console.log('📦 Parts:', parts.length);
+                console.log('📦 Parts received:', parts.length);
                 
                 for (const part of parts) {
+                  // Handle audio response
                   if (part.inlineData?.mimeType?.startsWith('audio/')) {
-                    console.log('🔊 Audio! Size:', part.inlineData.data?.substring(0, 50).length);
+                    console.log('🔊 Audio chunk received');
                     clientWs.send(JSON.stringify({
                       type: 'audio',
                       data: part.inlineData.data,
@@ -109,8 +115,13 @@ app.prepare().then(() => {
                     }));
                   }
                   
+                  // Handle text (for feedback)
                   if (part.text) {
-                    console.log('💬 Text:', part.text.substring(0, 100));
+                    console.log('💬 Text received:', part.text.substring(0, 100));
+                    clientWs.send(JSON.stringify({
+                      type: 'feedback',
+                      feedback: part.text
+                    }));
                   }
                 }
 
@@ -121,6 +132,7 @@ app.prepare().then(() => {
 
                 if (msg.serverContent.interrupted) {
                   console.log('⚠️ Interrupted');
+                  clientWs.send(JSON.stringify({ type: 'interrupted' }));
                 }
               }
 
@@ -139,10 +151,11 @@ app.prepare().then(() => {
 
           geminiWs.on('close', (code, reason) => {
             console.log(`🔌 Gemini closed: ${code} ${reason || ''}`);
+            isGeminiReady = false;
           });
         }
 
-        // Send audio - match Google's format from utils.ts createBlob function
+        // Send audio
         else if (message.type === 'audio' && geminiWs && isGeminiReady) {
           if (geminiWs.readyState === WebSocket.OPEN) {
             const audioInput = {
@@ -155,13 +168,15 @@ app.prepare().then(() => {
             };
             
             geminiWs.send(JSON.stringify(audioInput));
+          } else {
+            console.warn('⚠️ Gemini not ready');
           }
         }
 
+        // Turn complete
         else if (message.type === 'turn_complete' && geminiWs && isGeminiReady) {
           console.log('📨 Turn complete from client');
           if (geminiWs.readyState === WebSocket.OPEN) {
-            // Send empty audio chunk
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
@@ -170,18 +185,52 @@ app.prepare().then(() => {
                 }]
               }
             }));
-            console.log('✅ Turn end sent');
+            console.log('✅ Turn end sent to Gemini');
+          }
+        }
+
+        // Request feedback
+        else if (message.type === 'request_feedback' && geminiWs && isGeminiReady) {
+          console.log('📝 Requesting feedback from Gemini');
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            // First, send turn complete to end current audio stream
+            geminiWs.send(JSON.stringify({
+              realtimeInput: {
+                mediaChunks: [{
+                  data: "",
+                  mimeType: "audio/pcm;rate=16000"
+                }]
+              }
+            }));
+
+            // Wait a bit, then send feedback request
+            setTimeout(() => {
+              geminiWs.send(JSON.stringify({
+                clientContent: {
+                  turns: [{
+                    parts: [{
+                      text: "Our practice session is almost done. Please give me honest, friendly feedback about our conversation. What did I do well? What should I work on? Keep it brief, encouraging, and natural - like a friend helping me improve. No more than 3-4 sentences."
+                    }],
+                    role: "user"
+                  }],
+                  turnComplete: true
+                }
+              }));
+              console.log('✅ Feedback request sent to Gemini');
+            }, 500);
           }
         }
 
       } catch (err) {
-        console.error('❌ Error:', err.message);
+        console.error('❌ Error processing message:', err.message);
       }
     });
 
     clientWs.on('close', () => {
       console.log('🔌 Client disconnected');
-      if (geminiWs) geminiWs.close();
+      if (geminiWs) {
+        geminiWs.close();
+      }
     });
 
     clientWs.on('error', (err) => {
