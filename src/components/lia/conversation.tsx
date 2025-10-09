@@ -60,39 +60,6 @@ function createBlob(data: Float32Array): { data: string; mimeType: string } {
   };
 }
 
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const buffer = ctx.createBuffer(
-    numChannels,
-    data.length / 2 / numChannels,
-    sampleRate,
-  );
-
-  const dataInt16 = new Int16Array(data.buffer);
-  const l = dataInt16.length;
-  const dataFloat32 = new Float32Array(l);
-  for (let i = 0; i < l; i++) {
-    dataFloat32[i] = dataInt16[i] / 32768.0;
-  }
-  
-  if (numChannels === 1) {
-    buffer.copyToChannel(dataFloat32, 0);
-  } else {
-    for (let i = 0; i < numChannels; i++) {
-      const channel = dataFloat32.filter(
-        (_, index) => index % numChannels === i,
-      );
-      buffer.copyToChannel(channel, i);
-    }
-  }
-
-  return buffer;
-}
-
 function createWavHeader(pcmData: Uint8Array, sampleRate: number, numChannels: number): ArrayBuffer {
   const dataSize = pcmData.byteLength;
   const buffer = new ArrayBuffer(44 + dataSize);
@@ -414,7 +381,10 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
 
     try {
       if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Use higher sample rate for better quality
+        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+          sampleRate: 48000 // Higher sample rate for better quality
+        });
         console.log('🎵 Output AudioContext created, sample rate:', outputAudioContextRef.current.sampleRate);
       }
       
@@ -423,18 +393,34 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
       }
 
       const decodedData = decode(base64Data);
+      
+      // Create WAV header with higher quality settings
       const wavBuffer = createWavHeader(decodedData, 24000, 1);
       const audioBuffer = await outputAudioContextRef.current.decodeAudioData(wavBuffer);
 
+      // Create a gain node for volume control
+      const gainNode = outputAudioContextRef.current.createGain();
+      gainNode.gain.value = 1.2; // Slight volume boost for clarity
+
+      // Add a subtle high-pass filter to reduce low-frequency noise
+      const highPassFilter = outputAudioContextRef.current.createBiquadFilter();
+      highPassFilter.type = 'highpass';
+      highPassFilter.frequency.value = 80; // Remove very low frequencies
+
       const currentTime = outputAudioContextRef.current.currentTime;
       
-      if (nextStartTimeRef.current < currentTime + 0.05) {
-        nextStartTimeRef.current = currentTime + 0.05;
+      // Better scheduling with smoother transitions
+      if (nextStartTimeRef.current < currentTime + 0.02) {
+        nextStartTimeRef.current = currentTime + 0.02;
       }
 
       const source = outputAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(outputAudioContextRef.current.destination);
+      
+      // Connect through filters for better quality
+      source.connect(highPassFilter);
+      highPassFilter.connect(gainNode);
+      gainNode.connect(outputAudioContextRef.current.destination);
       
       source.addEventListener('ended', () => {
         audioSourcesRef.current.delete(source);
@@ -451,9 +437,10 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
       });
 
       source.start(nextStartTimeRef.current);
-      console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s`);
+      console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s at ${nextStartTimeRef.current.toFixed(2)}s`);
       
-      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration + 0.03;
+      // Smaller gap for smoother playback
+      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration + 0.01;
       audioSourcesRef.current.add(source);
 
     } catch (error) {

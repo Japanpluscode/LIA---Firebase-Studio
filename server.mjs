@@ -1,4 +1,4 @@
-// server.mjs - Complete with interruption support
+// server.mjs - Complete with high-quality audio and interruption support
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { parse } from 'url';
@@ -52,11 +52,9 @@ app.prepare().then(() => {
         console.log('📨 Type:', message.type);
 
         if (message.type === 'setup') {
-          // Store user info
           currentUserId = message.userId;
           currentUserName = message.userName;
 
-          // Connect to Gemini
           const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
           
           geminiWs = new WebSocket(geminiUrl);
@@ -72,7 +70,7 @@ app.prepare().then(() => {
                   speech_config: {
                     voice_config: {
                       prebuilt_voice_config: {
-                        voice_name: "Aoede"
+                        voice_name: "Aoede"  // High-quality female voice
                       }
                     }
                   }
@@ -105,7 +103,6 @@ app.prepare().then(() => {
                 console.log('📦 Parts received:', parts.length);
                 
                 for (const part of parts) {
-                  // Handle audio response
                   if (part.inlineData?.mimeType?.startsWith('audio/')) {
                     console.log('🔊 Audio chunk received');
                     clientWs.send(JSON.stringify({
@@ -115,7 +112,6 @@ app.prepare().then(() => {
                     }));
                   }
                   
-                  // Handle text (for feedback)
                   if (part.text) {
                     console.log('💬 Text received:', part.text.substring(0, 100));
                     clientWs.send(JSON.stringify({
@@ -155,7 +151,6 @@ app.prepare().then(() => {
           });
         }
 
-        // Send audio
         else if (message.type === 'audio' && geminiWs && isGeminiReady) {
           if (geminiWs.readyState === WebSocket.OPEN) {
             const audioInput = {
@@ -173,11 +168,9 @@ app.prepare().then(() => {
           }
         }
 
-        // User interrupted LIA
         else if (message.type === 'user_interrupted' && geminiWs && isGeminiReady) {
           console.log('🤚 User interrupted LIA - stopping current response');
           if (geminiWs.readyState === WebSocket.OPEN) {
-            // Send turn complete to stop Gemini's current response
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
@@ -187,13 +180,11 @@ app.prepare().then(() => {
               }
             }));
             
-            // Notify client that interruption was processed
             clientWs.send(JSON.stringify({ type: 'interrupted' }));
             console.log('✅ Interruption signal sent to Gemini');
           }
         }
 
-        // Turn complete
         else if (message.type === 'turn_complete' && geminiWs && isGeminiReady) {
           console.log('📨 Turn complete from client');
           if (geminiWs.readyState === WebSocket.OPEN) {
@@ -209,11 +200,9 @@ app.prepare().then(() => {
           }
         }
 
-        // Request feedback
         else if (message.type === 'request_feedback' && geminiWs && isGeminiReady) {
           console.log('📝 Requesting feedback from Gemini');
           if (geminiWs.readyState === WebSocket.OPEN) {
-            // First, send turn complete to end current audio stream
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
@@ -223,7 +212,6 @@ app.prepare().then(() => {
               }
             }));
 
-            // Wait a bit, then send feedback request
             setTimeout(() => {
               geminiWs.send(JSON.stringify({
                 clientContent: {
