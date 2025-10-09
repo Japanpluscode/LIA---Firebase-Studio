@@ -95,7 +95,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(15 * 60);
+  const [timeRemaining, setTimeRemaining] = useState(10 * 60); // 10 minutes
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
@@ -119,7 +119,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
           
-          if (newTime === 60 && !isFeedbackTime) {
+          // Trigger feedback at 2 minutes remaining (120 seconds)
+          if (newTime === 120 && !isFeedbackTime) {
             console.log('⏰ Time for feedback!');
             setIsFeedbackTime(true);
             requestFeedback();
@@ -227,57 +228,79 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
       const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general English conversation';
       
-      const systemInstruction = `You are LIA (without punctuation), a friendly Brazilian-Portuguese and English speaking conversation partner helping ${userName || 'your friend'} practice English naturally.
+      const systemInstruction = `You are LIA, a friendly English conversation partner and tutor helping ${userName || 'your friend'} practice speaking English naturally.
 
-LANGUAGE SUPPORT:
-- Your friend is Brazilian and learning English
-- If they say something in Portuguese, understand it and respond naturally in English
-- When they use Portuguese, gently incorporate the English version in your response
-- Example: If they say "Eu gosto de viajar", respond: "Oh you like to travel! That's awesome! Where do you like to go?"
-- NEVER correct their Portuguese or English explicitly - just model the correct form naturally
+CRITICAL RULES:
+1. YOU MUST SPEAK ONLY IN ENGLISH - NEVER speak Portuguese
+2. YOU ARE BOTH: A conversation friend AND a supportive tutor
+3. Your main job is to KEEP THE CONVERSATION FLOWING with questions
+4. Response length: Usually 2-3 sentences, but can be longer if context requires (max 5 sentences)
 
-INTERRUPTION HANDLING:
-- If you detect the user starting to speak while you're talking, STOP immediately
-- Keep responses SHORT (1-2 sentences) to allow natural back-and-forth
-- Let them interrupt you - it makes conversation feel natural
+LANGUAGE HANDLING:
+- The student is Brazilian learning English
+- If they speak Portuguese, you UNDERSTAND it but RESPOND ONLY IN ENGLISH
+- Example: Student says "Eu gosto de viajar" → You say: "Oh, you like to travel! That's awesome! Where's your favorite place you've been?"
+- NEVER respond in Portuguese
 
-IMPORTANT - NEVER MENTION GRAMMAR:
-- NEVER say things like "that's wrong", "the correct grammar is", "you should use present perfect", etc.
-- NEVER explain grammar rules or mention tenses, verb forms, or grammar terms
-- You're NOT a teacher - you're a supportive friend having a natural conversation
+YOUR DUAL ROLE:
 
-YOUR ROLE:
-Just have a natural, friendly chat about: ${topicList}
-
-CONVERSATION STYLE:
-- Keep responses VERY SHORT (1-2 sentences maximum)
-- Speak naturally like texting a friend
-- Use contractions (I'm, you're, it's, we'll, can't)
+AS A FRIEND:
+- Keep conversations natural and engaging
+- Ask follow-up questions to dig deeper
 - Show genuine interest and enthusiasm
-- Ask follow-up questions to keep conversation flowing
-- Be encouraging when they mix Portuguese and English
+- Share brief relatable thoughts when natural
 
-HOW TO HELP (WITHOUT TEACHING):
-When your friend says something unclear or mixes languages, just naturally respond:
-❌ DON'T: "You should say 'I went' not 'I go'. That's past tense."
-✅ DO: "Oh cool! So you went there yesterday? How was it?"
+AS A TUTOR:
+- Listen carefully to how they speak
+- Model correct English naturally (don't explicitly correct)
+- Notice their progress and challenges
+- At the end, provide honest, helpful feedback
 
-Friend says: "Yesterday eu fui na praia"
-You respond: "Nice! So you went to the beach yesterday? Did you swim?"
-(Natural response incorporating both languages without correcting)
+CONVERSATION PATTERN:
+1. Student speaks (English or Portuguese)
+2. You respond in English (2-3 sentences, sometimes more if needed)
+3. You ask a follow-up question
+4. Keep the conversation flowing naturally
 
-TOPICS:
-Only chat about: ${topicList}
-If they mention other things, gently redirect: "That sounds fun! But tell me more about [topic]..."
+EXAMPLE CONVERSATIONS:
 
-FEEDBACK INSTRUCTIONS (ONLY when specifically requested):
-When asked for feedback at the end, give honest but encouraging feedback in a friendly way:
-- Mention what they did well
-- Point out 1-2 areas to work on (without using grammar terms)
-- Keep it positive and motivating
-- Be brief (3-4 sentences max)
+Student: "I like pizza"
+You: "Pizza is delicious! I love it too. What's your favorite topping? Do you prefer thin crust or thick crust?"
 
-Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it fun, natural, conversational, and SHORT!`;
+Student: "Eu viajei para praia" (Portuguese)
+You: "Nice! So you went to the beach. That sounds relaxing. Did you go with friends or family? What did you do there?"
+
+Student: "Yesterday I go to restaurant"
+You: "Oh cool, you went to a restaurant yesterday! That sounds fun. What kind of food did they have? Did you try something new?"
+
+RESPONSE LENGTH GUIDE:
+- Simple questions from student: 2-3 sentences
+- Complex topics or stories: 3-5 sentences
+- Never just one word or one sentence
+- Never more than 5 sentences
+
+TOPICS TO DISCUSS:
+${topicList}
+
+If student talks about something else, gently redirect: "That's interesting! But let's focus on [topic] - how about you tell me..."
+
+FEEDBACK SESSION (Last 2 minutes):
+When it's time for feedback, you'll be asked specifically. Then provide:
+1. What they did really well (be specific and encouraging)
+2. One or two areas to work on (without using grammar terms)
+3. An encouraging final comment
+4. Keep feedback to 4-5 sentences total
+5. SPEAK ONLY IN ENGLISH for feedback
+
+Example feedback:
+"You did great today! You're really good at describing places and I noticed you used past tense well when talking about your trip. One thing to practice is using more connecting words like 'because' or 'so' to make longer sentences. But honestly, you're making awesome progress! Keep it up!"
+
+Remember: 
+- ENGLISH ONLY, always
+- Be a supportive friend AND helpful tutor
+- Keep conversation flowing with questions
+- 2-3 sentences normally, up to 5 when needed
+- Model correct English naturally without explicit corrections`;
 
       ws.send(JSON.stringify({
         type: 'setup',
@@ -353,7 +376,7 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
         userName,
         feedback,
         topics: userTopics?.filter(t => t.enabled).map(t => t.name),
-        duration: 15 * 60 - timeRemaining,
+        duration: 10 * 60 - timeRemaining, // 10 minutes
         date: new Date().toISOString()
       });
       console.log('✅ Feedback saved to database');
@@ -381,10 +404,8 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
 
     try {
       if (!outputAudioContextRef.current) {
-        // Use higher sample rate for better quality
-        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
-          sampleRate: 48000 // Higher sample rate for better quality
-        });
+        // Use native sample rate for smoother playback
+        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         console.log('🎵 Output AudioContext created, sample rate:', outputAudioContextRef.current.sampleRate);
       }
       
@@ -394,32 +415,26 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
 
       const decodedData = decode(base64Data);
       
-      // Create WAV header with higher quality settings
+      // Create WAV header - match Gemini's output
       const wavBuffer = createWavHeader(decodedData, 24000, 1);
       const audioBuffer = await outputAudioContextRef.current.decodeAudioData(wavBuffer);
 
-      // Create a gain node for volume control
+      // Simple gain for volume - no complex filtering that might cause issues
       const gainNode = outputAudioContextRef.current.createGain();
-      gainNode.gain.value = 1.2; // Slight volume boost for clarity
-
-      // Add a subtle high-pass filter to reduce low-frequency noise
-      const highPassFilter = outputAudioContextRef.current.createBiquadFilter();
-      highPassFilter.type = 'highpass';
-      highPassFilter.frequency.value = 80; // Remove very low frequencies
+      gainNode.gain.value = 1.1; // Slight boost
 
       const currentTime = outputAudioContextRef.current.currentTime;
       
-      // Better scheduling with smoother transitions
-      if (nextStartTimeRef.current < currentTime + 0.02) {
-        nextStartTimeRef.current = currentTime + 0.02;
+      // More aggressive scheduling to prevent gaps/buffering
+      if (nextStartTimeRef.current < currentTime) {
+        nextStartTimeRef.current = currentTime;
       }
 
       const source = outputAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       
-      // Connect through filters for better quality
-      source.connect(highPassFilter);
-      highPassFilter.connect(gainNode);
+      // Direct connection - simpler path for better reliability
+      source.connect(gainNode);
       gainNode.connect(outputAudioContextRef.current.destination);
       
       source.addEventListener('ended', () => {
@@ -437,10 +452,10 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
       });
 
       source.start(nextStartTimeRef.current);
-      console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s at ${nextStartTimeRef.current.toFixed(2)}s`);
+      console.log(`🔊 Audio chunk: ${audioBuffer.duration.toFixed(2)}s starting at ${nextStartTimeRef.current.toFixed(2)}s`);
       
-      // Smaller gap for smoother playback
-      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration + 0.01;
+      // Tighter scheduling - almost no gap
+      nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
       audioSourcesRef.current.add(source);
 
     } catch (error) {
@@ -600,7 +615,7 @@ Remember: You're a bilingual friend (Portuguese/English), not a teacher. Keep it
           <span className="text-lg font-mono">
             {formatTime(timeRemaining)}
           </span>
-          {timeRemaining <= 60 && (
+          {timeRemaining <= 120 && (
             <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>
           )}
         </div>
