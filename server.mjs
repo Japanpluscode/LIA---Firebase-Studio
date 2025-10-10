@@ -93,21 +93,25 @@ app.prepare().then(() => {
                 isGeminiReady = true;
                 clientWs.send(JSON.stringify({ type: 'ready' }));
                 
-                // AUTO-GREETING
+                // AUTO-GREETING with profile awareness
                 setTimeout(() => {
+                  const profileHint = message.userProfile 
+                    ? `I can see from your profile: ${message.userProfile}. ` 
+                    : '';
+                  
                   const greetingMessage = {
                     clientContent: {
                       turns: [{
                         role: 'user',
                         parts: [{ 
-                          text: `Hello! My name is ${userName}. Please greet me warmly and ask how I'm doing today.` 
+                          text: `Hello! My name is ${userName}. ${profileHint}Please greet me warmly, reference something from my profile if available, and ask me a question about one of today's topics to start our conversation.` 
                         }]
                       }],
                       turnComplete: true
                     }
                   };
                   geminiWs.send(JSON.stringify(greetingMessage));
-                  console.log('👋 Sent greeting');
+                  console.log('👋 Sent profile-aware greeting');
                 }, 1000);
               }
 
