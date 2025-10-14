@@ -95,7 +95,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<string>('');
-  const [timeRemaining, setTimeRemaining] = useState(10 * 60);
+  const [timeRemaining, setTimeRemaining] = useState(5 * 60); // 5 minutes
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
@@ -138,7 +138,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       timerIntervalRef.current = setInterval(() => {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
-          if (newTime === 120 && !isFeedbackTime) {
+          if (newTime === 30 && !isFeedbackTime) { // Last 30 seconds
             setIsFeedbackTime(true);
             requestFeedback();
           }
@@ -182,15 +182,17 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const requestFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      stopRecording();
-      setStatus('Preparing feedback...');
-      toast({ title: 'Feedback Time!', description: 'Getting feedback...' });
+      console.log('📝 Requesting feedback from LIA');
+      setStatus('Getting feedback...');
+      toast({ title: 'Feedback Time!', description: 'LIA is preparing your feedback...' });
       
       wsRef.current.send(JSON.stringify({
         clientContent: {
           turns: [{
             role: 'user',
-            parts: [{ text: 'Please give me simple, friendly feedback in 2-3 sentences about my English practice today.' }]
+            parts: [{ 
+              text: 'Now say: "Great job today! Now let me give you some feedback about our conversation." Then give me simple, friendly feedback in 2-3 sentences about my English practice. Tell me what I did well and one thing I can improve. After the feedback, say a warm goodbye like "Keep practicing! See you next time! Bye bye!"' 
+            }]
           }],
           turnComplete: true
         }
@@ -211,12 +213,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
       setTimeout(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          console.log('👋 Sending greeting request');
+          console.log('👋 Sending warm greeting request');
           wsRef.current.send(JSON.stringify({
             clientContent: {
               turns: [{
                 role: 'user',
-                parts: [{ text: `Hi! I'm ${userName}. Please greet me warmly in a friendly way and ask me one simple question to start our conversation.` }]
+                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly and ask me how my day is going or how I'm feeling today. Keep it friendly and simple!` }]
               }],
               turnComplete: true
             }
@@ -264,15 +266,20 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         if (part.text) {
           console.log('💬 Text received:', part.text);
           if (isFeedbackTime) {
+            console.log('📝 Saving feedback to Firestore');
             await saveConversationFeedback({
               userId,
               userName,
               feedback: part.text,
               topics: userTopics?.filter(t => t.enabled).map(t => t.name),
-              duration: 10 * 60 - timeRemaining,
+              duration: 5 * 60 - timeRemaining,
               date: new Date().toISOString()
             });
-            setStatus('Feedback received!');
+            setStatus('Feedback saved! Session complete.');
+            toast({ 
+              title: 'Feedback Saved!', 
+              description: 'Your teacher can review your progress.' 
+            });
           }
         }
       }
@@ -331,13 +338,22 @@ YOUR PERSONALITY:
 - Keep it simple and natural
 - Be patient and encouraging
 - Show genuine interest in what they say
+- Ask lots of questions to keep the conversation flowing
 
 HOW TO TALK:
 1. Keep responses VERY SHORT - just 1-2 sentences maximum
-2. Ask ONE simple question at a time
-3. If student speaks Portuguese, understand it but respond in simple English
-4. Don't use complicated words or grammar terms
-5. WAIT for the student to finish speaking before responding
+2. ALWAYS ask a question to keep the conversation going
+3. If student speaks Portuguese, understand it perfectly but ALWAYS respond in simple English
+4. NEVER speak Portuguese - only English responses
+5. Don't use complicated words or grammar terms
+6. If there's a pause or silence, ask a new question about the topics
+
+CONVERSATION FLOW:
+- Start with a warm greeting and ask about their day (How was your day? How are you feeling today? etc)
+- Then naturally move to the practice topics: ${topicList}
+- Keep asking questions related to these topics
+- If the student stops talking, ask a related follow-up question
+- Make the conversation feel natural and friendly
 
 EXAMPLES OF GOOD RESPONSES:
 
@@ -348,18 +364,22 @@ Student: "Yesterday I go beach"
 You: "Nice! The beach sounds fun. Did you swim?"
 
 Student: "Eu gosto de viajar" (Portuguese)
-You: "Oh, you like to travel! Where do you want to go?"
+You: "Oh, you like to travel! Where do you want to go?" (Notice: Response is in English)
 
-IMPORTANT RULES:
+Student: "Como se diz 'cachorro' em inglês?" (Portuguese)
+You: "That's 'dog' in English! Do you have a dog?"
+
+CRITICAL RULES:
 - MAXIMUM 1-2 sentences per response
-- ONE simple question only
+- ALWAYS end with a question
 - Use easy, everyday words
 - Be encouraging and positive
 - If they make mistakes, just say it correctly in your response naturally
-- Stay on today's topics: ${topicList}
-- ALWAYS wait for the student to completely finish speaking
+- NEVER speak Portuguese - only understand it
+- If student is silent for a moment, ask a new question about: ${topicList}
+- Keep questions simple and related to the topics
 
-Remember: You're a FRIEND helping them practice, not a teacher testing them. Keep it fun, simple, and natural!`;
+Remember: You're a FRIEND helping them practice English. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
 
         const setupMessage = {
           setup: {
@@ -601,7 +621,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         <div className="mb-4 flex items-center gap-2 text-white/80">
           <Clock className="w-5 h-5" />
           <span className="text-lg font-mono">{formatTime(timeRemaining)}</span>
-          {timeRemaining <= 120 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
+          {timeRemaining <= 30 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
         </div>
       )}
 
