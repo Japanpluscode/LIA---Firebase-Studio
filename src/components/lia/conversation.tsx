@@ -89,7 +89,7 @@ function writeString(view: DataView, offset: number, str: string) {
 
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isConnected, setIsConnected] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
@@ -104,7 +104,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const isListeningRef = useRef(false);
   const nextStartTimeRef = useRef(0);
   const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -157,6 +156,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const requestFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      stopRecording();
       wsRef.current.send(JSON.stringify({ type: 'request_feedback' }));
       setStatus('Preparing your feedback...');
       toast({ title: 'Feedback Time!', description: 'LIA is preparing your feedback...' });
@@ -165,20 +165,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const endConversation = useCallback(() => {
     setConversationStarted(false);
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (streamSourceRef.current) {
-      streamSourceRef.current.disconnect();
-      streamSourceRef.current = null;
-    }
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect();
-      scriptProcessorRef.current = null;
-    }
-    isListeningRef.current = false;
-    setIsListening(false);
+    stopRecording();
     if (wsRef.current) wsRef.current.close();
     setStatus('Session complete!');
     toast({ title: 'Session Complete!', description: 'Your feedback has been saved.' });
@@ -219,6 +206,7 @@ HOW TO TALK:
 2. Ask ONE simple question at a time
 3. If student speaks Portuguese, understand it but respond in simple English
 4. Don't use complicated words or grammar terms
+5. WAIT for the student to finish speaking before responding
 
 EXAMPLES OF GOOD RESPONSES:
 
@@ -238,7 +226,7 @@ IMPORTANT RULES:
 - Be encouraging
 - If they make mistakes, just say it correctly in your response
 - Stay on today's topics: ${topicList}
-- If they go off-topic, gently bring them back: "That's cool! Hey, let's talk about ${topicList.split(',')[0]}. Tell me about..."
+- ALWAYS wait for the student to completely finish speaking
 
 WHEN GIVING FEEDBACK (at the end):
 Just say 2-3 things:
@@ -256,7 +244,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         userProfile
       }));
       
-      setTimeout(() => startListening(), 1500);
+      setTimeout(() => startRecording(), 1500);
     };
 
     ws.onmessage = (event) => {
@@ -274,8 +262,12 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       }
       if (message.type === 'turn_complete') {
         setIsSpeaking(false);
-        if (!isFeedbackTime) setStatus('Listening...');
-        else setStatus('Feedback received!');
+        if (!isFeedbackTime) {
+          setStatus('Your turn - speak now');
+          startRecording();
+        } else {
+          setStatus('Feedback received!');
+        }
       }
       if (message.type === 'interrupted') {
         stopAllAudioSources();
@@ -325,6 +317,11 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
   const playAudio = useCallback(async (base64Data: string) => {
     setIsSpeaking(true);
     setStatus('LIA is speaking...');
+    
+    // Stop recording when AI starts speaking
+    if (isRecording) {
+      stopRecording();
+    }
 
     try {
       if (!outputAudioContextRef.current) {
@@ -338,26 +335,18 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       const wavBuffer = createWavHeader(decodedData, 24000, 1);
       const audioBuffer = await outputAudioContextRef.current.decodeAudioData(wavBuffer);
 
-      const gainNode = outputAudioContextRef.current.createGain();
-      gainNode.gain.value = 1.1;
-
       const currentTime = outputAudioContextRef.current.currentTime;
-      if (nextStartTimeRef.current < currentTime) {
-        nextStartTimeRef.current = currentTime;
-      }
+      nextStartTimeRef.current = Math.max(nextStartTimeRef.current, currentTime);
 
       const source = outputAudioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(gainNode);
-      gainNode.connect(outputAudioContextRef.current.destination);
+      source.connect(outputAudioContextRef.current.destination);
       
       source.addEventListener('ended', () => {
         audioSourcesRef.current.delete(source);
         if (audioSourcesRef.current.size === 0) {
           setIsSpeaking(false);
           nextStartTimeRef.current = 0;
-          if (isConnected && !isFeedbackTime) setStatus('Listening...');
-          else if (isFeedbackTime) setStatus('Feedback complete!');
         }
       });
 
@@ -371,16 +360,10 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       setStatus('Error');
       nextStartTimeRef.current = 0;
     }
-  }, [isConnected, isFeedbackTime]);
+  }, [isRecording]);
 
-  const startListening = useCallback(async () => {
-    if (isFeedbackTime) return;
-    if (isSpeaking) {
-      stopAllAudioSources();
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'user_interrupted' }));
-      }
-    }
+  const startRecording = useCallback(async () => {
+    if (isRecording || isFeedbackTime) return;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -402,32 +385,28 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       scriptProcessorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN && isListeningRef.current) {
+        if (wsRef.current?.readyState === WebSocket.OPEN && isRecording) {
           const pcmData = e.inputBuffer.getChannelData(0);
           const audioBlob = createBlob(pcmData);
           wsRef.current.send(JSON.stringify({ type: 'audio', data: audioBlob.data }));
         }
       };
 
-      const gainNode = inputAudioContextRef.current.createGain();
-      gainNode.gain.value = 0;
-
       source.connect(processor);
-      processor.connect(gainNode);
-      gainNode.connect(inputAudioContextRef.current.destination);
+      processor.connect(inputAudioContextRef.current.destination);
 
-      isListeningRef.current = true;
-      setIsListening(true);
-      setStatus('Listening...');
+      setIsRecording(true);
+      setStatus('Listening - speak now...');
 
     } catch (error) {
       toast({ title: 'Microphone Error', description: 'Please allow microphone access', variant: 'destructive' });
       setStatus('Click to start');
     }
-  }, [toast, isFeedbackTime, isSpeaking, stopAllAudioSources]);
+  }, [toast, isFeedbackTime, isRecording]);
 
-  const stopListening = useCallback(() => {
-    isListeningRef.current = false;
+  const stopRecording = useCallback(() => {
+    if (!isRecording) return;
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -440,29 +419,35 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       scriptProcessorRef.current.disconnect();
       scriptProcessorRef.current = null;
     }
+    
+    setIsRecording(false);
+    
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'turn_complete' }));
+      setStatus('Processing...');
     }
-    setIsListening(false);
-    setStatus('Processing...');
-  }, []);
+  }, [isRecording]);
 
   const handleClick = () => {
     if (isFeedbackTime && isSpeaking) return;
+    
     if (inputAudioContextRef.current?.state === "suspended") inputAudioContextRef.current.resume();
     if (outputAudioContextRef.current?.state === "suspended") outputAudioContextRef.current.resume();
     
-    if (!isConnected) connectWebSocket();
-    else if (isListening) stopListening();
-    else if (!isSpeaking && !isFeedbackTime) startListening();
-    else if (isSpeaking) startListening();
+    if (!isConnected) {
+      connectWebSocket();
+    } else if (isRecording) {
+      stopRecording();
+    } else if (!isSpeaking && !isFeedbackTime) {
+      startRecording();
+    }
   };
 
   useEffect(() => {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      stopRecording();
       if (wsRef.current) wsRef.current.close();
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       if (inputAudioContextRef.current) inputAudioContextRef.current.close();
       if (outputAudioContextRef.current) outputAudioContextRef.current.close();
     };
@@ -478,9 +463,9 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         </div>
       )}
 
-      <div onClick={handleClick} className={cn('relative rounded-full overflow-hidden w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 shadow-2xl cursor-pointer', { 'ring-4 ring-green-400 scale-105': isListening, 'ring-4 ring-blue-400 animate-pulse': isSpeaking, 'hover:scale-105': !isSpeaking && isConnected && !isFeedbackTime, 'ring-4 ring-yellow-400': isFeedbackTime })}>
+      <div onClick={handleClick} className={cn('relative rounded-full overflow-hidden w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 shadow-2xl cursor-pointer', { 'ring-4 ring-green-400 scale-105': isRecording, 'ring-4 ring-blue-400 animate-pulse': isSpeaking, 'hover:scale-105': !isSpeaking && isConnected && !isFeedbackTime, 'ring-4 ring-yellow-400': isFeedbackTime })}>
         <LiaAvatar />
-        {isListening && !isSpeaking && (
+        {isRecording && !isSpeaking && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <Mic className="w-12 h-12 text-white animate-pulse" />
           </div>
@@ -497,6 +482,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         <p className="text-sm text-white/60 mt-2">
           {isConnected ? `Today's Topics: ${userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'General Conversation'}` : 'Your AI Language Learning Assistant'}
         </p>
+        {isRecording && <p className="text-xs text-green-400 mt-1">Click again when finished speaking</p>}
       </div>
     </div>
   );
