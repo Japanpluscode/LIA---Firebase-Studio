@@ -110,6 +110,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const isSpeakingRef = useRef(false);
   const isInitializingRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const logCountRef = useRef(0);
 
   const { toast } = useToast();
 
@@ -171,6 +172,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     inputNodeRef.current = inputAudioContextRef.current.createGain();
     outputNodeRef.current = outputAudioContextRef.current.createGain();
     outputNodeRef.current.connect(outputAudioContextRef.current.destination);
+    
+    console.log('✅ Audio contexts initialized');
   }, []);
 
   const requestFeedback = useCallback(() => {
@@ -439,9 +442,11 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         }
       });
       
+      console.log('✅ Microphone access granted');
+      
       const audioCtx = inputAudioContextRef.current;
       if (!audioCtx) {
-        console.error('No audio context');
+        console.error('❌ No audio context');
         return;
       }
 
@@ -451,33 +456,49 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       const bufferSize = 256;
       scriptProcessorRef.current = audioCtx.createScriptProcessor(bufferSize, 1, 1);
 
-      const SILENCE_THRESHOLD = 0.01;
+      const SILENCE_THRESHOLD = 0.005; // Lower threshold for better detection
       const SILENCE_DURATION = 1500;
 
+      console.log('🎛️ Audio processor created with threshold:', SILENCE_THRESHOLD);
+
       scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
-        if (!isRecording || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          if (logCountRef.current % 100 === 0) {
+            console.log('⚠️ WebSocket not ready');
+          }
+          logCountRef.current++;
+          return;
+        }
 
         const inputBuffer = audioProcessingEvent.inputBuffer;
         const pcmData = inputBuffer.getChannelData(0);
 
+        // Calculate RMS (volume)
         let sum = 0;
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
         }
         const rms = Math.sqrt(sum / pcmData.length);
         
-        // Debug logging (1% of the time)
-        if (Math.random() < 0.01) {
-          console.log('🎚️ Audio level:', rms.toFixed(4));
+        // Log audio levels frequently for debugging
+        if (logCountRef.current % 50 === 0) {
+          console.log('🎚️ Audio level:', rms.toFixed(4), 'Threshold:', SILENCE_THRESHOLD);
         }
+        logCountRef.current++;
         
+        // Detect speech vs silence
         if (rms > SILENCE_THRESHOLD) {
           if (!isSpeakingRef.current) {
-            console.log('🎤 User started speaking (RMS:', rms.toFixed(4), ')');
+            console.log('🎤 User started speaking! (RMS:', rms.toFixed(4), ')');
             isSpeakingRef.current = true;
             setStatus('Listening to you...');
           }
           silenceStartRef.current = Date.now();
+          
+          // Send audio chunk
+          if (logCountRef.current % 50 === 0) {
+            console.log('📤 Sending audio chunk');
+          }
           
           wsRef.current.send(JSON.stringify({
             realtimeInput: {
@@ -487,7 +508,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         } else if (isSpeakingRef.current) {
           const silenceDuration = Date.now() - silenceStartRef.current;
           
-          if (Math.random() < 0.1) {
+          if (logCountRef.current % 50 === 0) {
             console.log('🤫 Silence duration:', silenceDuration, 'ms');
           }
           
@@ -510,7 +531,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
 
       setIsRecording(true);
       setStatus('Listening...');
-      console.log('✅ Recording started');
+      console.log('✅ Recording started - speak now!');
     } catch (error) {
       console.error('❌ Recording error:', error);
       setStatus('Microphone error');
@@ -555,13 +576,11 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
     await initConnection();
   };
 
-  // Cleanup ONLY on real unmount, not re-renders
   useEffect(() => {
     return () => {
-      console.log('🧹 Component UNMOUNTING (not re-rendering)');
+      console.log('🧹 Component UNMOUNTING');
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       
-      // Don't cleanup if conversation is active
       if (!conversationStarted) return;
       
       stopRecording();
@@ -569,7 +588,7 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       inputAudioContextRef.current?.close();
       outputAudioContextRef.current?.close();
     };
-  }, []); // Empty dependency array = only on unmount
+  }, []);
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
