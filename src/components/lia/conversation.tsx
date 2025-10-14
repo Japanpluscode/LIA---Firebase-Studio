@@ -27,7 +27,6 @@ interface ConversationProps {
   userName: string;
 }
 
-// Helper functions (same as Gemini sample)
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -96,7 +95,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
-  // Refs (similar to Gemini sample)
   const wsRef = useRef<WebSocket | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -108,14 +106,13 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const inputNodeRef = useRef<GainNode | null>(null);
   const outputNodeRef = useRef<GainNode | null>(null);
-  
-  // Silence detection refs
   const silenceStartRef = useRef(0);
   const isSpeakingRef = useRef(false);
+  const isInitializingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
 
   const { toast } = useToast();
 
-  // Fetch user data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -131,7 +128,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     fetchData();
   }, [userId]);
 
-  // Timer for session
   useEffect(() => {
     if (conversationStarted && timeRemaining > 0 && !isFeedbackTime) {
       timerIntervalRef.current = setInterval(() => {
@@ -161,17 +157,19 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   };
 
   const initAudio = useCallback(() => {
-    // Initialize audio contexts (same as Gemini sample)
+    if (inputAudioContextRef.current && outputAudioContextRef.current) {
+      console.log('🔊 Audio contexts already initialized');
+      return;
+    }
+
+    console.log('🔊 Initializing audio contexts...');
     inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     
     nextStartTimeRef.current = outputAudioContextRef.current.currentTime;
     
-    // Create gain nodes for audio processing
     inputNodeRef.current = inputAudioContextRef.current.createGain();
     outputNodeRef.current = outputAudioContextRef.current.createGain();
-    
-    // Connect output node to destination
     outputNodeRef.current.connect(outputAudioContextRef.current.destination);
   }, []);
 
@@ -202,10 +200,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       setStatus('Connected!');
       toast({ title: 'Ready!', description: 'LIA is listening!' });
       
-      // Start recording
       await startRecording();
 
-      // Send greeting
       setTimeout(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           console.log('👋 Sending greeting request');
@@ -226,7 +222,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       const parts = message.serverContent.modelTurn?.parts || [];
       
       for (const part of parts) {
-        // Handle audio (same pattern as Gemini sample)
         if (part.inlineData?.mimeType?.startsWith('audio/')) {
           console.log('🔊 Audio chunk received');
           const audioCtx = outputAudioContextRef.current;
@@ -259,7 +254,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           }
         }
 
-        // Handle text feedback
         if (part.text) {
           console.log('💬 Text received:', part.text);
           if (isFeedbackTime) {
@@ -276,7 +270,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         }
       }
 
-      // Handle interruption (same as Gemini sample)
       if (message.serverContent.interrupted) {
         console.log('⚠️ AI interrupted');
         for (const source of sourcesRef.current.values()) {
@@ -291,13 +284,18 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, [userId, userName, userTopics, timeRemaining, isFeedbackTime, toast]);
 
   const initConnection = useCallback(async () => {
+    if (isInitializingRef.current || hasInitializedRef.current) {
+      console.log('⚠️ Already initializing or initialized');
+      return;
+    }
+
+    isInitializingRef.current = true;
+
     try {
       console.log('🚀 Initializing connection...');
       
-      // Initialize audio
       initAudio();
 
-      // Get API key
       const response = await fetch('/api/gemini-key');
       if (!response.ok) {
         throw new Error('Failed to get API key');
@@ -305,12 +303,13 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       const { apiKey } = await response.json();
       console.log('🔑 API key received');
 
-      // Connect to Gemini WebSocket
       const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
         console.log('🔌 WebSocket connected');
+        hasInitializedRef.current = true;
+        
         const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general conversation';
         
         const systemInstruction = `You are LIA, a warm and friendly English conversation partner helping ${userName} practice speaking English naturally.
@@ -376,7 +375,6 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         try {
           let messageData: string;
           
-          // Handle different data types (Blob or String)
           if (event.data instanceof Blob) {
             messageData = await event.data.text();
           } else if (typeof event.data === 'string') {
@@ -386,7 +384,6 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
             return;
           }
 
-          // Parse JSON
           try {
             const message = JSON.parse(messageData);
             await handleWebSocketMessage(message);
@@ -402,17 +399,21 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         console.error('❌ WebSocket error:', error);
         setStatus('Connection error');
         toast({ title: 'Connection Error', variant: 'destructive' });
+        isInitializingRef.current = false;
       };
 
       wsRef.current.onclose = (event) => {
         console.log('🔌 WebSocket closed:', event.code, event.reason);
         setStatus('Session ended');
         setConversationStarted(false);
+        hasInitializedRef.current = false;
+        isInitializingRef.current = false;
       };
 
     } catch (error) {
       console.error('❌ Init error:', error);
       toast({ title: 'Setup Error', description: String(error), variant: 'destructive' });
+      isInitializingRef.current = false;
     }
   }, [userId, userName, userProfile, userTopics, toast, handleWebSocketMessage, initAudio]);
 
@@ -424,8 +425,6 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
 
     try {
       console.log('🎤 Starting recording...');
-      
-      // Request microphone access
       setStatus('Requesting microphone...');
       
       await inputAudioContextRef.current?.resume();
@@ -452,9 +451,8 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       const bufferSize = 256;
       scriptProcessorRef.current = audioCtx.createScriptProcessor(bufferSize, 1, 1);
 
-      // Silence detection parameters
       const SILENCE_THRESHOLD = 0.01;
-      const SILENCE_DURATION = 2000; // 2 seconds
+      const SILENCE_DURATION = 1500;
 
       scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
         if (!isRecording || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -462,35 +460,42 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
         const inputBuffer = audioProcessingEvent.inputBuffer;
         const pcmData = inputBuffer.getChannelData(0);
 
-        // Calculate RMS (volume)
         let sum = 0;
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
         }
         const rms = Math.sqrt(sum / pcmData.length);
         
-        // Detect speech vs silence
+        // Debug logging (1% of the time)
+        if (Math.random() < 0.01) {
+          console.log('🎚️ Audio level:', rms.toFixed(4));
+        }
+        
         if (rms > SILENCE_THRESHOLD) {
           if (!isSpeakingRef.current) {
-            console.log('🎤 User started speaking');
+            console.log('🎤 User started speaking (RMS:', rms.toFixed(4), ')');
             isSpeakingRef.current = true;
+            setStatus('Listening to you...');
           }
           silenceStartRef.current = Date.now();
           
-          // Send audio chunk
           wsRef.current.send(JSON.stringify({
             realtimeInput: {
               mediaChunks: [createBlob(pcmData)]
             }
           }));
         } else if (isSpeakingRef.current) {
-          // Check silence duration
           const silenceDuration = Date.now() - silenceStartRef.current;
+          
+          if (Math.random() < 0.1) {
+            console.log('🤫 Silence duration:', silenceDuration, 'ms');
+          }
+          
           if (silenceDuration > SILENCE_DURATION) {
             console.log('🤐 User stopped speaking - sending turn complete');
             isSpeakingRef.current = false;
+            setStatus('Processing...');
             
-            // Signal turn complete
             wsRef.current.send(JSON.stringify({
               clientContent: {
                 turnComplete: true
@@ -540,8 +545,8 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
   }, [isRecording]);
 
   const handleClick = async () => {
-    if (conversationStarted) {
-      console.log('⚠️ Conversation already in progress');
+    if (conversationStarted || isInitializingRef.current) {
+      console.log('⚠️ Conversation already in progress or initializing');
       return;
     }
     
@@ -550,17 +555,21 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
     await initConnection();
   };
 
-  // Cleanup on unmount
+  // Cleanup ONLY on real unmount, not re-renders
   useEffect(() => {
     return () => {
-      console.log('🧹 Component cleanup');
+      console.log('🧹 Component UNMOUNTING (not re-rendering)');
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      
+      // Don't cleanup if conversation is active
+      if (!conversationStarted) return;
+      
       stopRecording();
       wsRef.current?.close();
       inputAudioContextRef.current?.close();
       outputAudioContextRef.current?.close();
     };
-  }, [stopRecording]);
+  }, []); // Empty dependency array = only on unmount
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
