@@ -145,7 +145,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const requestFeedback = useCallback(async () => {
+  const requestFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       stopRecording();
       setStatus('Preparing feedback...');
@@ -163,35 +163,138 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     }
   }, [toast]);
 
+  const handleWebSocketMessage = useCallback(async (message: any) => {
+    console.log('📨 Message received:', message);
+
+    if (message.setupComplete) {
+      console.log('✅ Setup complete');
+      setConversationStarted(true);
+      setStatus('Connected!');
+      toast({ title: 'Ready!', description: 'LIA is listening!' });
+      
+      // Start recording first
+      await startRecording();
+
+      // Then send greeting after a delay
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log('👋 Sending greeting');
+          wsRef.current.send(JSON.stringify({
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{ text: `Hi! I'm ${userName}. Greet me warmly and ask one simple question.` }]
+              }],
+              turnComplete: true
+            }
+          }));
+        }
+      }, 1500);
+    }
+
+    if (message.serverContent) {
+      const parts = message.serverContent.modelTurn?.parts || [];
+      
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('audio/')) {
+          console.log('🔊 Playing audio');
+          const audioCtx = outputAudioContextRef.current;
+          if (!audioCtx) continue;
+
+          try {
+            nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioCtx.currentTime);
+
+            const audioBuffer = await decodeAudioData(decode(part.inlineData.data), audioCtx, 24000, 1);
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioCtx.destination);
+            
+            source.addEventListener('ended', () => {
+              sourcesRef.current.delete(source);
+              if (sourcesRef.current.size === 0) {
+                console.log('🎵 Audio finished');
+                setStatus('Listening...');
+              }
+            });
+
+            source.start(nextStartTimeRef.current);
+            nextStartTimeRef.current += audioBuffer.duration;
+            sourcesRef.current.add(source);
+            setStatus('LIA is speaking...');
+          } catch (error) {
+            console.error('Audio decode error:', error);
+          }
+        }
+
+        if (part.text) {
+          console.log('💬 Text received:', part.text);
+          if (isFeedbackTime) {
+            await saveConversationFeedback({
+              userId,
+              userName,
+              feedback: part.text,
+              topics: userTopics?.filter(t => t.enabled).map(t => t.name),
+              duration: 10 * 60 - timeRemaining,
+              date: new Date().toISOString()
+            });
+            setStatus('Feedback received!');
+          }
+        }
+      }
+
+      if (message.serverContent.interrupted) {
+        console.log('⚠️ Interrupted');
+        for (const source of sourcesRef.current.values()) {
+          source.stop();
+          sourcesRef.current.delete(source);
+        }
+        nextStartTimeRef.current = 0;
+        setStatus('Listening...');
+      }
+    }
+  }, [userId, userName, userTopics, timeRemaining, isFeedbackTime, toast]);
+
   const initConnection = useCallback(async () => {
     try {
+      console.log('🚀 Initializing connection...');
+      
+      // Initialize audio contexts
       inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       nextStartTimeRef.current = outputAudioContextRef.current.currentTime;
 
+      // Get API key
       const response = await fetch('/api/gemini-key');
+      if (!response.ok) {
+        throw new Error('Failed to get API key');
+      }
       const { apiKey } = await response.json();
+      console.log('🔑 API key received');
 
+      // Connect to Gemini WebSocket
       const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
+        console.log('🔌 WebSocket connected');
         const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general conversation';
         
-        const systemInstruction = `You are LIA, a warm and friendly English conversation partner helping ${userName}.
+        const systemInstruction = `You are LIA, a warm and friendly English conversation partner.
 
 STUDENT: ${userName}
 PROFILE: ${userProfile || 'Getting to know them'}
 TOPICS: ${topicList}
 
 RULES:
-- Keep responses SHORT (1-2 sentences)
+- Keep responses VERY SHORT (1-2 sentences max)
 - Ask ONE simple question
-- Use easy words
-- Be encouraging
-- Stay on topics: ${topicList}`;
+- Use easy, simple words
+- Be encouraging and friendly
+- Stay on topics: ${topicList}
 
-        wsRef.current?.send(JSON.stringify({
+Remember: Be a FRIEND, not a teacher!`;
+
+        const setupMessage = {
           setup: {
             model: 'models/gemini-2.0-flash-exp',
             generationConfig: {
@@ -202,106 +305,82 @@ RULES:
             },
             systemInstruction: { parts: [{ text: systemInstruction }] }
           }
-        }));
+        };
+
+        console.log('📤 Sending setup:', setupMessage);
+        wsRef.current?.send(JSON.stringify(setupMessage));
       };
 
       wsRef.current.onmessage = async (event) => {
-        const message = JSON.parse(event.data);
-
-        if (message.setupComplete) {
-          setConversationStarted(true);
-          setStatus('Connected!');
-          toast({ title: 'Ready!', description: 'LIA is listening!' });
-          await startRecording();
-
-          // Send greeting
-          setTimeout(() => {
-            wsRef.current?.send(JSON.stringify({
-              clientContent: {
-                turns: [{
-                  role: 'user',
-                  parts: [{ text: `Hi! I'm ${userName}. Greet me and ask one simple question.` }]
-                }],
-                turnComplete: true
-              }
-            }));
-          }, 1000);
-        }
-
-        if (message.serverContent) {
-          const parts = message.serverContent.modelTurn?.parts || [];
+        try {
+          let messageData: string;
           
-          for (const part of parts) {
-            if (part.inlineData?.mimeType?.startsWith('audio/')) {
-              const audioCtx = outputAudioContextRef.current;
-              if (!audioCtx) continue;
-
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioCtx.currentTime);
-
-              const audioBuffer = await decodeAudioData(decode(part.inlineData.data), audioCtx, 24000, 1);
-              const source = audioCtx.createBufferSource();
-              source.buffer = audioBuffer;
-              source.connect(audioCtx.destination);
-              
-              source.addEventListener('ended', () => {
-                sourcesRef.current.delete(source);
-              });
-
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += audioBuffer.duration;
-              sourcesRef.current.add(source);
-              setStatus('LIA is speaking...');
-            }
-
-            if (part.text && isFeedbackTime) {
-              await saveConversationFeedback({
-                userId,
-                userName,
-                feedback: part.text,
-                topics: userTopics?.filter(t => t.enabled).map(t => t.name),
-                duration: 10 * 60 - timeRemaining,
-                date: new Date().toISOString()
-              });
-              setStatus('Feedback received!');
-            }
+          // Handle different data types
+          if (event.data instanceof Blob) {
+            messageData = await event.data.text();
+          } else if (typeof event.data === 'string') {
+            messageData = event.data;
+          } else {
+            console.warn('Unknown message type:', typeof event.data);
+            return;
           }
 
-          if (message.serverContent.interrupted) {
-            for (const source of sourcesRef.current.values()) {
-              source.stop();
-              sourcesRef.current.delete(source);
-            }
-            nextStartTimeRef.current = 0;
-            setStatus('Listening...');
+          // Parse JSON
+          try {
+            const message = JSON.parse(messageData);
+            await handleWebSocketMessage(message);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            console.log('Raw data:', messageData.substring(0, 200));
           }
+        } catch (error) {
+          console.error('Message handler error:', error);
         }
       };
 
-      wsRef.current.onerror = (e) => {
-        console.error('WebSocket error:', e);
+      wsRef.current.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
         setStatus('Connection error');
+        toast({ title: 'Connection Error', variant: 'destructive' });
       };
 
-      wsRef.current.onclose = () => {
+      wsRef.current.onclose = (event) => {
+        console.log('🔌 WebSocket closed:', event.code, event.reason);
         setStatus('Session ended');
         setConversationStarted(false);
       };
 
     } catch (error) {
-      console.error('Init error:', error);
-      toast({ title: 'Setup Error', variant: 'destructive' });
+      console.error('❌ Init error:', error);
+      toast({ title: 'Setup Error', description: String(error), variant: 'destructive' });
     }
-  }, [userId, userName, userProfile, userTopics, timeRemaining, isFeedbackTime, toast]);
+  }, [userId, userName, userProfile, userTopics, toast, handleWebSocketMessage]);
 
   const startRecording = useCallback(async () => {
-    if (isRecording) return;
+    if (isRecording) {
+      console.log('⚠️ Already recording');
+      return;
+    }
 
     try {
+      console.log('🎤 Starting recording...');
       await inputAudioContextRef.current?.resume();
-      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       
       const audioCtx = inputAudioContextRef.current;
-      if (!audioCtx) return;
+      if (!audioCtx) {
+        console.error('No audio context');
+        return;
+      }
 
       sourceNodeRef.current = audioCtx.createMediaStreamSource(mediaStreamRef.current);
       scriptProcessorRef.current = audioCtx.createScriptProcessor(256, 1, 1);
@@ -310,9 +389,11 @@ RULES:
         if (!isRecording || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
         const pcmData = e.inputBuffer.getChannelData(0);
+        const blob = createBlob(pcmData);
+        
         wsRef.current.send(JSON.stringify({
           realtimeInput: {
-            mediaChunks: [createBlob(pcmData)]
+            mediaChunks: [blob]
           }
         }));
       };
@@ -322,21 +403,26 @@ RULES:
 
       setIsRecording(true);
       setStatus('Listening...');
+      console.log('✅ Recording started');
     } catch (error) {
-      console.error('Recording error:', error);
-      toast({ title: 'Microphone Error', variant: 'destructive' });
+      console.error('❌ Recording error:', error);
+      toast({ title: 'Microphone Error', description: 'Please allow microphone access', variant: 'destructive' });
     }
   }, [isRecording, toast]);
 
   const stopRecording = useCallback(() => {
     if (!isRecording) return;
 
+    console.log('🛑 Stopping recording...');
     setIsRecording(false);
 
     if (scriptProcessorRef.current && sourceNodeRef.current) {
       scriptProcessorRef.current.disconnect();
       sourceNodeRef.current.disconnect();
     }
+
+    scriptProcessorRef.current = null;
+    sourceNodeRef.current = null;
 
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -348,19 +434,23 @@ RULES:
 
   const handleClick = async () => {
     if (!conversationStarted) {
+      console.log('👆 Avatar clicked - starting conversation');
       await initConnection();
+    } else {
+      console.log('⚠️ Conversation already started');
     }
   };
 
   useEffect(() => {
     return () => {
+      console.log('🧹 Cleanup');
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       stopRecording();
       wsRef.current?.close();
       inputAudioContextRef.current?.close();
       outputAudioContextRef.current?.close();
     };
-  }, []);
+  }, [stopRecording]);
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
