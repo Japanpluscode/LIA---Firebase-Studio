@@ -85,6 +85,10 @@ async function decodeAudioData(
   return buffer;
 }
 
+// Constants for audio detection
+const SILENCE_THRESHOLD = 0.005;
+const SILENCE_DURATION = 2000;
+
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -456,9 +460,6 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
       const bufferSize = 256;
       scriptProcessorRef.current = audioCtx.createScriptProcessor(bufferSize, 1, 1);
 
-      const SILENCE_THRESHOLD = 0.005; // Lower threshold for better detection
-      const SILENCE_DURATION = 1500;
-
       console.log('🎛️ Audio processor created with threshold:', SILENCE_THRESHOLD);
 
       scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
@@ -506,22 +507,26 @@ Remember: You're a FRIEND helping them practice, not a teacher testing them. Kee
             }
           }));
         } else if (isSpeakingRef.current) {
+          // User is in speaking mode but currently silent
           const silenceDuration = Date.now() - silenceStartRef.current;
           
           if (logCountRef.current % 50 === 0) {
             console.log('🤫 Silence duration:', silenceDuration, 'ms');
           }
           
+          // Continue sending audio even during silence (Gemini requires continuous stream)
+          wsRef.current.send(JSON.stringify({
+            realtimeInput: {
+              mediaChunks: [createBlob(pcmData)]
+            }
+          }));
+          
           if (silenceDuration > SILENCE_DURATION) {
-            console.log('🤐 User stopped speaking - sending turn complete');
+            console.log('🤐 Silence detected - stopping audio stream');
             isSpeakingRef.current = false;
             setStatus('Processing...');
             
-            wsRef.current.send(JSON.stringify({
-              clientContent: {
-                turnComplete: true
-              }
-            }));
+            // The model will detect the end of speech automatically from the silence in the audio
           }
         }
       };
