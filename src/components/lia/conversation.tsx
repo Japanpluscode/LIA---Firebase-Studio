@@ -152,6 +152,16 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           
           if (newTime <= 0) {
             stopRecording();
+            setStatus('This conversation has finished.');
+            toast({ 
+              title: 'Session Complete!', 
+              description: 'Thank you for practicing with LIA today!' 
+            });
+            
+            // Close WebSocket connection
+            if (wsRef.current) {
+              wsRef.current.close();
+            }
             return 0;
           }
           return newTime;
@@ -219,7 +229,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           turns: [{
             role: 'user',
             parts: [{ 
-              text: 'Now say: "Great job today! Now let me give you some feedback about our conversation." Then give me simple, friendly feedback in 2-3 sentences about my English practice. Tell me what I did well and one thing I can improve. After the feedback, say a warm goodbye like "Keep practicing! See you next time! Bye bye!"' 
+              text: 'Now say: "Great job today! Now let me give you some feedback about our conversation." Then analyze our entire conversation and give me honest, specific feedback in 2-3 sentences. Mention: 1) What specific grammar mistakes I made and how to fix them (give examples of what I said wrong), 2) What vocabulary or pronunciation I should improve, 3) What I did well. Be specific and helpful with real examples from our conversation. After the feedback, say a warm goodbye like "Keep practicing! See you next time! Bye bye!"' 
             }]
           }],
           turnComplete: true
@@ -406,6 +416,14 @@ CRITICAL RULES:
 - NEVER speak Portuguese - only understand it
 - If student is silent for a moment, ask a new question about: ${topicList}
 - Keep questions simple and related to the topics
+
+IMPORTANT FOR FEEDBACK:
+- Pay close attention to the student's grammar mistakes throughout our conversation
+- Notice their vocabulary choices and pronunciation patterns
+- Remember specific examples of what they said so you can reference them in feedback
+- Take note of patterns - do they always forget articles? Do they mix up tenses?
+- Be honest and constructive in your feedback - students want to improve
+- When giving feedback, quote exactly what they said wrong as examples
 
 Remember: You're a FRIEND helping them practice English. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
 
@@ -650,7 +668,8 @@ Remember: You're a FRIEND helping them practice English. Keep it fun, simple, na
           <Clock className="w-5 h-5" />
           <span className="text-lg font-mono">{formatTime(timeRemaining)}</span>
           {timeRemaining <= 40 && timeRemaining > 30 && <span className="text-sm text-orange-400 ml-2">Wrapping up...</span>}
-          {timeRemaining <= 30 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
+          {timeRemaining <= 30 && timeRemaining > 0 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
+          {timeRemaining === 0 && <span className="text-sm text-red-400 ml-2">Finished</span>}
         </div>
       )}
 
@@ -660,14 +679,15 @@ Remember: You're a FRIEND helping them practice English. Keep it fun, simple, na
           'relative rounded-full overflow-hidden w-48 h-48 md:w-64 md:h-64 flex items-center justify-center transition-all duration-300 shadow-2xl',
           { 
             'cursor-pointer hover:scale-105': !conversationStarted, 
-            'ring-4 ring-green-400 scale-105': isRecording && !isSpeaking,
+            'ring-4 ring-green-400 scale-105': isRecording && !isSpeaking && timeRemaining > 0,
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
             'ring-4 ring-orange-400': isPreparingFeedback && !isFeedbackTime,
-            'ring-4 ring-yellow-400': isFeedbackTime 
+            'ring-4 ring-yellow-400': isFeedbackTime && timeRemaining > 0,
+            'ring-4 ring-red-400': timeRemaining === 0
           }
         )}>
         <LiaAvatar />
-        {isRecording && !isSpeaking && (
+        {isRecording && !isSpeaking && timeRemaining > 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <Mic className="w-12 h-12 text-white animate-pulse" />
           </div>
