@@ -97,6 +97,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [userProfile, setUserProfile] = useState<string>('');
   const [timeRemaining, setTimeRemaining] = useState(5 * 60); // 5 minutes
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [isPreparingFeedback, setIsPreparingFeedback] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -134,14 +135,21 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, [userId]);
 
   useEffect(() => {
-    if (conversationStarted && timeRemaining > 0 && !isFeedbackTime) {
+    if (conversationStarted && timeRemaining > 0) {
       timerIntervalRef.current = setInterval(() => {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
-          if (newTime === 30 && !isFeedbackTime) { // Last 30 seconds
+          
+          if (newTime === 40 && !isPreparingFeedback) { // 40 seconds before end - preparation
+            setIsPreparingFeedback(true);
+            prepareForFeedback();
+          }
+          
+          if (newTime === 30 && !isFeedbackTime) { // 30 seconds before end - actual feedback
             setIsFeedbackTime(true);
             requestFeedback();
           }
+          
           if (newTime <= 0) {
             stopRecording();
             return 0;
@@ -153,7 +161,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       };
     }
-  }, [conversationStarted, timeRemaining, isFeedbackTime]);
+  }, [conversationStarted, timeRemaining, isPreparingFeedback, isFeedbackTime]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -179,6 +187,26 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     
     console.log('✅ Audio contexts initialized');
   }, []);
+
+  const prepareForFeedback = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('⏰ Preparing for feedback');
+      setStatus('Wrapping up...');
+      toast({ title: 'Almost done!', description: 'LIA will give feedback soon...' });
+      
+      wsRef.current.send(JSON.stringify({
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ 
+              text: 'We are almost finished with our conversation today. Please naturally wrap up what we were talking about and tell me something like "Ok, we\'re almost finished for today. In a moment, I\'ll give you some feedback about our conversation." Keep it natural and friendly.' 
+            }]
+          }],
+          turnComplete: true
+        }
+      }));
+    }
+  }, [toast]);
 
   const requestFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -218,7 +246,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
             clientContent: {
               turns: [{
                 role: 'user',
-                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly and ask me how my day is going or how I'm feeling today. Keep it friendly and simple!` }]
+                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly saying something like "Nice to talk to you!" or "Great to see you again!" (NOT "nice to meet you"), then ask me how my day is going or how I'm feeling today. Keep it friendly and simple!` }]
               }],
               turnComplete: true
             }
@@ -621,6 +649,7 @@ Remember: You're a FRIEND helping them practice English. Keep it fun, simple, na
         <div className="mb-4 flex items-center gap-2 text-white/80">
           <Clock className="w-5 h-5" />
           <span className="text-lg font-mono">{formatTime(timeRemaining)}</span>
+          {timeRemaining <= 40 && timeRemaining > 30 && <span className="text-sm text-orange-400 ml-2">Wrapping up...</span>}
           {timeRemaining <= 30 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
         </div>
       )}
@@ -633,6 +662,7 @@ Remember: You're a FRIEND helping them practice English. Keep it fun, simple, na
             'cursor-pointer hover:scale-105': !conversationStarted, 
             'ring-4 ring-green-400 scale-105': isRecording && !isSpeaking,
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
+            'ring-4 ring-orange-400': isPreparingFeedback && !isFeedbackTime,
             'ring-4 ring-yellow-400': isFeedbackTime 
           }
         )}>
