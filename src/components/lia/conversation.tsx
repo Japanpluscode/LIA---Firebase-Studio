@@ -430,18 +430,18 @@ Remember: You're a FRIEND helping them practice English. Keep it fun, simple, na
 const setupMessage = {
   setup: {
     model: 'models/gemini-2.0-flash-exp',
-    generationConfig: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        voiceConfig: { 
-          prebuiltVoiceConfig: { 
-            voiceName: 'Aoede' 
-          } 
+    generation_config: {  // Changed from generationConfig
+      response_modalities: ['AUDIO'],  // Changed from responseModalities
+      speech_config: {  // Changed from speechConfig
+        voice_config: {  // Changed from voiceConfig
+          prebuilt_voice_config: {  // Changed from prebuiltVoiceConfig
+            voice_name: 'Aoede'  // Changed from voiceName
+          }
         },
-        speaking_rate: 0.85  // Slower speech (default is 1.0, range is 0.25 to 4.0)
+        speaking_rate: 0.85
       }
     },
-    systemInstruction: { parts: [{ text: systemInstruction }] }
+    system_instruction: { parts: [{ text: systemInstruction }] }  // Changed from systemInstruction
   }
 };
 
