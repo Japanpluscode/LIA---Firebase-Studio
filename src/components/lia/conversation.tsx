@@ -427,18 +427,23 @@ IMPORTANT FOR FEEDBACK:
 
 Remember: You're a FRIEND helping them practice English. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
 
-        const setupMessage = {
-          setup: {
-            model: 'models/gemini-2.0-flash-exp',
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }
-              }
-            },
-            systemInstruction: { parts: [{ text: systemInstruction }] }
-          }
-        };
+const setupMessage = {
+  setup: {
+    model: 'models/gemini-2.0-flash-exp',
+    generationConfig: {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: { 
+          prebuiltVoiceConfig: { 
+            voiceName: 'Aoede' 
+          } 
+        },
+        speakingRate: 0.85  // Slower speech (default is 1.0, range is 0.25 to 4.0)
+      }
+    },
+    systemInstruction: { parts: [{ text: systemInstruction }] }
+  }
+};
 
         console.log('📤 Sending setup');
         wsRef.current?.send(JSON.stringify(setupMessage));
