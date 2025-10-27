@@ -140,12 +140,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
           
-          if (newTime === 40 && !isPreparingFeedback) { // 40 seconds before end - preparation
+          if (newTime === 40 && !isPreparingFeedback) {
             setIsPreparingFeedback(true);
             prepareForFeedback();
           }
           
-          if (newTime === 30 && !isFeedbackTime) { // 30 seconds before end - actual feedback
+          if (newTime === 30 && !isFeedbackTime) {
             setIsFeedbackTime(true);
             requestFeedback();
           }
@@ -158,7 +158,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
               description: 'Thank you for practicing with LIA today!' 
             });
             
-            // Close WebSocket connection
             if (wsRef.current) {
               wsRef.current.close();
             }
@@ -379,12 +378,13 @@ YOUR PERSONALITY:
 - Ask lots of questions to keep the conversation flowing
 
 HOW TO TALK:
-1. Keep responses VERY SHORT - just 1-2 sentences maximum
-2. ALWAYS ask a question to keep the conversation going
-3. If student speaks Portuguese, understand it perfectly but ALWAYS respond in simple English
-4. NEVER speak Portuguese - only English responses
-5. Don't use complicated words or grammar terms
-6. If there's a pause or silence, ask a new question about the topics
+1. **CRITICAL INSTRUCTION: Speak clearly and at a slow, easy-to-understand pace. Enunciate your words carefully and pause between sentences so the student can understand everything. This is very important for language learning.**
+2. Keep responses VERY SHORT - just 1-2 sentences maximum.
+3. ALWAYS ask a question to keep the conversation going.
+4. If student speaks Portuguese, understand it perfectly but ALWAYS respond in simple English.
+5. NEVER speak Portuguese - only English responses.
+6. Don't use complicated words or grammar terms.
+7. If there's a pause or silence, ask a new question about the topics.
 
 CONVERSATION FLOW:
 - Start with a warm greeting and ask about their day (How was your day? How are you feeling today? etc)
@@ -408,6 +408,7 @@ Student: "Como se diz 'cachorro' em inglês?" (Portuguese)
 You: "That's 'dog' in English! Do you have a dog?"
 
 CRITICAL RULES:
+- SPEAK SLOWLY AND CLEARLY - this is the most important thing
 - MAXIMUM 1-2 sentences per response
 - ALWAYS end with a question
 - Use easy, everyday words
@@ -425,25 +426,24 @@ IMPORTANT FOR FEEDBACK:
 - Be honest and constructive in your feedback - students want to improve
 - When giving feedback, quote exactly what they said wrong as examples
 
-Remember: You're a FRIEND helping them practice English. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
+Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARLY. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
 
-const setupMessage = {
-  setup: {
-    model: 'models/gemini-2.0-flash-exp',
-    generation_config: {  // Changed from generationConfig
-      response_modalities: ['AUDIO'],  // Changed from responseModalities
-      speech_config: {  // Changed from speechConfig
-        voice_config: {  // Changed from voiceConfig
-          prebuilt_voice_config: {  // Changed from prebuiltVoiceConfig
-            voice_name: 'Aoede'  // Changed from voiceName
+        const setupMessage = {
+          setup: {
+            model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: { 
+                  prebuiltVoiceConfig: { 
+                    voiceName: 'Aoede' 
+                  } 
+                }
+              }
+            },
+            systemInstruction: { parts: [{ text: systemInstruction }] }
           }
-        },
-        speaking_rate: 0.85
-      }
-    },
-    system_instruction: { parts: [{ text: systemInstruction }] }  // Changed from systemInstruction
-  }
-};
+        };
 
         console.log('📤 Sending setup');
         wsRef.current?.send(JSON.stringify(setupMessage));
@@ -545,20 +545,17 @@ const setupMessage = {
         const inputBuffer = audioProcessingEvent.inputBuffer;
         const pcmData = inputBuffer.getChannelData(0);
 
-        // Calculate RMS (volume)
         let sum = 0;
         for (let i = 0; i < pcmData.length; i++) {
           sum += pcmData[i] * pcmData[i];
         }
         const rms = Math.sqrt(sum / pcmData.length);
         
-        // Log audio levels frequently for debugging
         if (logCountRef.current % 50 === 0) {
           console.log('🎚️ Audio level:', rms.toFixed(4), 'Threshold:', SILENCE_THRESHOLD);
         }
         logCountRef.current++;
         
-        // Detect speech vs silence
         if (rms > SILENCE_THRESHOLD) {
           if (!isSpeakingRef.current) {
             console.log('🎤 User started speaking! (RMS:', rms.toFixed(4), ')');
@@ -567,7 +564,6 @@ const setupMessage = {
           }
           silenceStartRef.current = Date.now();
           
-          // Send audio chunk
           if (logCountRef.current % 50 === 0) {
             console.log('📤 Sending audio chunk');
           }
@@ -578,14 +574,12 @@ const setupMessage = {
             }
           }));
         } else if (isSpeakingRef.current) {
-          // User is in speaking mode but currently silent
           const silenceDuration = Date.now() - silenceStartRef.current;
           
           if (logCountRef.current % 50 === 0) {
             console.log('🤫 Silence duration:', silenceDuration, 'ms');
           }
           
-          // Continue sending audio even during silence (Gemini requires continuous stream)
           wsRef.current.send(JSON.stringify({
             realtimeInput: {
               mediaChunks: [createBlob(pcmData)]
@@ -596,8 +590,6 @@ const setupMessage = {
             console.log('🤐 Silence detected - stopping audio stream');
             isSpeakingRef.current = false;
             setStatus('Processing...');
-            
-            // The model will detect the end of speech automatically from the silence in the audio
           }
         }
       };
