@@ -438,7 +438,7 @@ const setupMessage = {
             voiceName: 'Aoede' 
           } 
         },
-        speakingRate: 0.85  // Slower speech (default is 1.0, range is 0.25 to 4.0)
+        speaking_rate: 0.85  // Slower speech (default is 1.0, range is 0.25 to 4.0)
       }
     },
     systemInstruction: { parts: [{ text: systemInstruction }] }
