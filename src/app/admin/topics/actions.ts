@@ -8,7 +8,9 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
-  deleteDoc 
+  deleteDoc,
+  query,
+  where
 } from 'firebase/firestore';
 
 export interface Topic {
@@ -58,6 +60,27 @@ export async function getUser(userId: string) {
     };
   } catch (error) {
     console.error('Error getting user:', error);
+    return null;
+  }
+}
+
+export async function getUserByEmail(email: string) {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return null;
+    
+    const userDoc = querySnapshot.docs[0];
+    return {
+      id: userDoc.id,
+      name: userDoc.data().name || '',
+      email: userDoc.data().email || '',
+      profile: userDoc.data().profile || ''
+    };
+  } catch (error) {
+    console.error('Error getting user by email:', error);
     return null;
   }
 }

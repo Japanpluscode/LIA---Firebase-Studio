@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Trash2, Edit2, Save, X } from 'lucide-react';
@@ -38,9 +38,10 @@ export default function TopicManager() {
         setEditUserName(user.name);
         setEditUserEmail(user.email);
         setEditUserProfile(user.profile);
+        setIsEditingUser(false);
       }
     }
-  }, [selectedUserId]);
+  }, [selectedUserId, users]);
 
   const loadUsers = async () => {
     const fetchedUsers = await getUsers();
@@ -188,194 +189,215 @@ export default function TopicManager() {
     }
   };
 
+  const activeTopics = topics.filter(t => t.enabled);
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Students and Topics</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Add students, then select a student to manage their conversation topics.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Add New Student */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Add New Student</h3>
-            <div className="grid gap-4">
-              <div>
-                <label className="text-sm font-medium">Student Name</label>
-                <Input
-                  placeholder="Enter new student name"
-                  value={newStudentName}
-                  onChange={(e) => setNewStudentName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Student Email</label>
-                <Input
-                  type="email"
-                  placeholder="Enter student's email"
-                  value={newStudentEmail}
-                  onChange={(e) => setNewStudentEmail(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Student Profile & Preferences</label>
-                <Textarea
-                  placeholder="e.g., Loves hiking, reading fantasy novels, and trying new vegetarian recipes. Learning Spanish for an upcoming trip to Peru."
-                  value={newStudentProfile}
-                  onChange={(e) => setNewStudentProfile(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <Button onClick={handleAddStudent}>Add Student</Button>
-            </div>
+    <div className="space-y-6">
+      {/* Add New Student */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Add New Student</h3>
+        <div className="grid gap-4">
+          <div>
+            <label className="text-sm font-medium">Student Name</label>
+            <Input
+              placeholder="Enter new student name"
+              value={newStudentName}
+              onChange={(e) => setNewStudentName(e.target.value)}
+            />
           </div>
-
-          {/* Select Student */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Select Student</h3>
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a student..." />
-              </SelectTrigger>
-              <SelectContent>
-                {users.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.name} ({user.email})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div>
+            <label className="text-sm font-medium">Student Email</label>
+            <Input
+              type="email"
+              placeholder="Enter student's email"
+              value={newStudentEmail}
+              onChange={(e) => setNewStudentEmail(e.target.value)}
+            />
           </div>
+          <div>
+            <label className="text-sm font-medium">Student Profile & Preferences</label>
+            <Textarea
+              placeholder="e.g., Loves hiking, reading fantasy novels, and trying new vegetarian recipes. Learning Spanish for an upcoming trip to Peru."
+              value={newStudentProfile}
+              onChange={(e) => setNewStudentProfile(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <Button onClick={handleAddStudent}>Add Student</Button>
+        </div>
+      </div>
 
-          {/* Edit Student Profile */}
-          {selectedUserId && (
-            <div className="space-y-4 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Student Profile</h3>
-                {!isEditingUser ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsEditingUser(true)}
-                  >
-                    <Edit2 className="w-4 h-4 mr-2" />
-                    Edit Profile
-                  </Button>
-                ) : (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCancelEdit}
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleUpdateStudent}
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      Save
-                    </Button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="grid gap-4">
-                <div>
-                  <label className="text-sm font-medium">Name</label>
-                  <Input
-                    value={editUserName}
-                    onChange={(e) => setEditUserName(e.target.value)}
-                    disabled={!isEditingUser}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Email</label>
-                  <Input
-                    type="email"
-                    value={editUserEmail}
-                    onChange={(e) => setEditUserEmail(e.target.value)}
-                    disabled={!isEditingUser}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Profile & Preferences</label>
-                  <Textarea
-                    value={editUserProfile}
-                    onChange={(e) => setEditUserProfile(e.target.value)}
-                    disabled={!isEditingUser}
-                    rows={3}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+      {/* Select Student */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold">Select Student</h3>
+        <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select a student..." />
+          </SelectTrigger>
+          <SelectContent>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={user.id}>
+                {user.name} ({user.email})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-          {/* Manage Topics */}
-          {selectedUserId && (
-            <div className="space-y-4 border-t pt-4">
-              <h3 className="text-lg font-semibold">Manage Topics</h3>
-              
-              {/* Add Topic */}
+      {/* Edit Student Profile */}
+      {selectedUserId && (
+        <div className="space-y-4 border-t pt-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Student Profile & Preferences</h3>
+            {!isEditingUser ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditingUser(true)}
+              >
+                <Edit2 className="w-4 h-4 mr-2" />
+                Edit Profile
+              </Button>
+            ) : (
               <div className="flex gap-2">
-                <Input
-                  placeholder="Enter new topic"
-                  value={newTopicName}
-                  onChange={(e) => setNewTopicName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddTopic()}
-                />
-                <Button onClick={handleAddTopic}>Add Topic</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelEdit}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleUpdateStudent}
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </Button>
               </div>
+            )}
+          </div>
+          
+          <div className="grid gap-4">
+            <div>
+              <label className="text-sm font-medium">Name</label>
+              <Input
+                value={editUserName}
+                onChange={(e) => setEditUserName(e.target.value)}
+                disabled={!isEditingUser}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Email</label>
+              <Input
+                type="email"
+                value={editUserEmail}
+                onChange={(e) => setEditUserEmail(e.target.value)}
+                disabled={!isEditingUser}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Profile & Preferences</label>
+              <Textarea
+                value={editUserProfile}
+                onChange={(e) => setEditUserProfile(e.target.value)}
+                disabled={!isEditingUser}
+                rows={3}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* Topics List */}
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium">Current Topics</h4>
-                {topics.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No topics yet. Add a topic above to get started.
-                  </p>
-                ) : (
-                  topics.map((topic) => (
-                    <Card key={topic.id}>
-                      <CardContent className="flex items-center justify-between p-4">
-                        <div className="flex items-center gap-3 flex-1">
-                          <Switch
-                            checked={topic.enabled}
-                            onCheckedChange={(checked) => handleToggleTopic(topic.id, checked)}
-                          />
-                          <span className={topic.enabled ? '' : 'text-muted-foreground line-through'}>
-                            {topic.name}
-                          </span>
-                          {topic.enabled && (
-                            <span className="text-xs text-green-600 font-medium">Enabled</span>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteTopic(topic.id)}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
+      {/* Manage Topics */}
+      {selectedUserId && (
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold">Manage Topics</h3>
+          
+          {/* Add Topic */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter new topic"
+              value={newTopicName}
+              onChange={(e) => setNewTopicName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleAddTopic()}
+            />
+            <Button onClick={handleAddTopic}>Add Topic</Button>
+          </div>
+
+          {/* Topics List */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <h4 className="text-sm font-medium">Current Topics</h4>
+              <span className="text-xs text-muted-foreground">
+                {activeTopics.length} enabled, {topics.length - activeTopics.length} disabled
+              </span>
+            </div>
+            {topics.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No topics yet. Add a topic above to get started.
+              </p>
+            ) : (
+              topics.map((topic) => (
+                <Card key={topic.id}>
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Switch
+                        checked={topic.enabled}
+                        onCheckedChange={(checked) => handleToggleTopic(topic.id, checked)}
+                      />
+                      <span className={topic.enabled ? '' : 'text-muted-foreground line-through'}>
+                        {topic.name}
+                      </span>
+                      {topic.enabled && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteTopic(topic.id)}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+
+          {/* Active Topics Display */}
+          {activeTopics.length > 0 && (
+            <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+              <h4 className="text-sm font-semibold text-green-700">
+                Active Topics for AI Conversations
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {activeTopics.map((topic) => (
+                  <span
+                    key={topic.id}
+                    className="bg-green-100 text-green-800 text-sm px-3 py-1 rounded-full"
+                  >
+                    {topic.name}
+                  </span>
+                ))}
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                L.I.A. will only discuss these topics with this student. The AI will politely redirect if the student tries to discuss other subjects.
+              </p>
             </div>
           )}
+        </div>
+      )}
 
-          {!selectedUserId && (
-            <div className="text-center py-8 text-muted-foreground">
-              Select a student to manage their topics.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {!selectedUserId && (
+        <div className="text-center py-8 text-muted-foreground border-t">
+          Select a student above to manage their topics.
+        </div>
+      )}
     </div>
   );
 }

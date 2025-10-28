@@ -1,31 +1,20 @@
-import { getUsers } from './actions';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import TopicManager from './topic-manager';
 
-export default async function TopicsAdminPage() {
-  const users = await getUsers();
-
+export default async function AdminTopicsPage() {
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-6 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <Card className="mb-8 bg-card text-card-foreground">
-          <CardHeader>
-            <CardTitle>Manage Students and Topics</CardTitle>
-            <CardDescription>
-              Add students, then select a student to manage their conversation topics.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TopicManager users={users} />
-          </CardContent>
-        </Card>
-      </div>
+    <div className="container mx-auto p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage Students and Topics</CardTitle>
+          <CardDescription>
+            Add students, then select a student to manage their conversation topics.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TopicManager />
+        </CardContent>
+      </Card>
     </div>
   );
 }
