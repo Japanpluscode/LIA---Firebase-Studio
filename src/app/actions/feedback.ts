@@ -1,32 +1,38 @@
 'use server';
 
-import { getDB } from '@/lib/firebase';
+import { clientDb as db } from '@/lib/firebase-client';
+import { collection, addDoc } from 'firebase/firestore';
 
-export async function saveConversationFeedback(data: {
+interface ConversationFeedback {
   userId: string;
   userName: string;
   feedback: string;
   topics: string[];
   duration: number;
   date: string;
-}) {
-  try {
-    const db = getDB();
-    const feedbackRef = db.collection('users').doc(data.userId).collection('conversations');
-    
-    await feedbackRef.add({
-      userName: data.userName,
-      feedback: data.feedback,
-      topics: data.topics,
-      duration: data.duration,
-      date: data.date,
-      createdAt: new Date().toISOString()
-    });
+}
 
-    console.log('✅ Feedback saved successfully');
-    return { success: true };
+export async function saveConversationFeedback(data: ConversationFeedback) {
+  try {
+    console.log('💾 Saving feedback to Firestore:', data);
+    
+    // Save to conversations collection under user
+    const conversationRef = await addDoc(
+      collection(db, 'users', data.userId, 'conversations'),
+      {
+        userName: data.userName,
+        feedback: data.feedback,
+        topics: data.topics,
+        duration: data.duration,
+        date: data.date,
+        timestamp: new Date().toISOString(),
+      }
+    );
+
+    console.log('✅ Feedback saved successfully:', conversationRef.id);
+    return { success: true, id: conversationRef.id };
   } catch (error) {
     console.error('❌ Error saving feedback:', error);
-    return { success: false, error: 'Failed to save feedback' };
+    throw new Error(`Failed to save feedback: ${error}`);
   }
 }

@@ -85,9 +85,10 @@ async function decodeAudioData(
   return buffer;
 }
 
-// Constants for audio detection
 const SILENCE_THRESHOLD = 0.005;
 const SILENCE_DURATION = 2000;
+const BASE_TIME = 5 * 60; // 5 minutes base conversation time
+const BUFFER_TIME = 30; // 30 seconds buffer for feedback
 
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isRecording, setIsRecording] = useState(false);
@@ -95,10 +96,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<string>('');
-  const [timeRemaining, setTimeRemaining] = useState(5 * 60); // 5 minutes
+  const [timeRemaining, setTimeRemaining] = useState(BASE_TIME);
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isPreparingFeedback, setIsPreparingFeedback] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [inBufferTime, setInBufferTime] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
@@ -116,6 +119,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const isInitializingRef = useRef(false);
   const hasInitializedRef = useRef(false);
   const logCountRef = useRef(0);
+  const startTimeRef = useRef<number>(0);
 
   const { toast } = useToast();
 
@@ -134,25 +138,66 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     fetchData();
   }, [userId]);
 
+  // Check for early completion
   useEffect(() => {
-    if (conversationStarted && timeRemaining > 0) {
+    if (feedbackSaved && !isSpeaking && isFeedbackTime && timerIntervalRef.current) {
+      console.log('✅ Feedback complete - ending conversation early');
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+      
+      const actualDuration = BASE_TIME - timeRemaining;
+      const mins = Math.floor(actualDuration / 60);
+      const secs = actualDuration % 60;
+      
+      setStatus(`Conversation finished! Time used: ${mins}:${secs.toString().padStart(2, '0')}`);
+      toast({ 
+        title: 'Session Complete!', 
+        description: `Completed in ${mins}:${secs.toString().padStart(2, '0')}` 
+      });
+      
+      stopRecording();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    }
+  }, [feedbackSaved, isSpeaking, isFeedbackTime, timeRemaining, toast]);
+
+  useEffect(() => {
+    if (conversationStarted && !feedbackSaved) {
       timerIntervalRef.current = setInterval(() => {
         setTimeRemaining((prev) => {
           const newTime = prev - 1;
           
-          if (newTime === 40 && !isPreparingFeedback) {
+          // Wrap-up at 1 minute (60 seconds)
+          if (newTime === 60 && !isPreparingFeedback) {
             setIsPreparingFeedback(true);
             prepareForFeedback();
           }
           
+          // Feedback at 30 seconds
           if (newTime === 30 && !isFeedbackTime) {
             setIsFeedbackTime(true);
             requestFeedback();
           }
           
-          if (newTime <= 0) {
+          // Timer hits 0 - enter buffer time
+          if (newTime === 0 && !inBufferTime) {
+            setInBufferTime(true);
+            setStatus('Extra time for feedback...');
+            toast({ 
+              title: 'Finishing up', 
+              description: 'LIA is completing your feedback' 
+            });
+            return -1; // Start counting negative
+          }
+          
+          // Hard stop at -30 seconds (30 seconds of buffer)
+          if (newTime <= -BUFFER_TIME) {
             stopRecording();
-            setStatus('This conversation has finished.');
+            const totalDuration = BASE_TIME + BUFFER_TIME;
+            const mins = Math.floor(totalDuration / 60);
+            const secs = totalDuration % 60;
+            setStatus(`Conversation finished! Total time: ${mins}:${secs.toString().padStart(2, '0')}`);
             toast({ 
               title: 'Session Complete!', 
               description: 'Thank you for practicing with LIA today!' 
@@ -161,18 +206,25 @@ export default function Conversation({ userId, userName }: ConversationProps) {
             if (wsRef.current) {
               wsRef.current.close();
             }
-            return 0;
+            return newTime;
           }
+          
           return newTime;
         });
       }, 1000);
+      
       return () => {
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       };
     }
-  }, [conversationStarted, timeRemaining, isPreparingFeedback, isFeedbackTime]);
+  }, [conversationStarted, isPreparingFeedback, isFeedbackTime, feedbackSaved, inBufferTime, toast]);
 
   const formatTime = (seconds: number) => {
+    if (seconds < 0) {
+      // Show as extra time during buffer
+      const extraTime = Math.abs(seconds);
+      return `+0:${extraTime.toString().padStart(2, '0')}`;
+    }
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -199,7 +251,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const prepareForFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('⏰ Preparing for feedback');
+      console.log('⏰ Preparing for feedback (1 minute remaining)');
       setStatus('Wrapping up...');
       toast({ title: 'Almost done!', description: 'LIA will give feedback soon...' });
       
@@ -208,7 +260,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           turns: [{
             role: 'user',
             parts: [{ 
-              text: 'We are almost finished with our conversation today. Please naturally wrap up what we were talking about and tell me something like "Ok, we\'re almost finished for today. In a moment, I\'ll give you some feedback about our conversation." Keep it natural and friendly.' 
+              text: 'We are almost finished with our conversation today. Please naturally wrap up what we were talking about in just one sentence, then tell me "In a moment, I\'ll give you some feedback about our conversation." Keep it very brief.' 
             }]
           }],
           turnComplete: true
@@ -219,7 +271,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
   const requestFeedback = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('📝 Requesting feedback from LIA');
+      console.log('📝 Requesting feedback from LIA (30 seconds remaining)');
       setStatus('Getting feedback...');
       toast({ title: 'Feedback Time!', description: 'LIA is preparing your feedback...' });
       
@@ -228,7 +280,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
           turns: [{
             role: 'user',
             parts: [{ 
-              text: 'Now say: "Great job today! Now let me give you some feedback about our conversation." Then analyze our entire conversation and give me honest, specific feedback in 2-3 sentences. Mention: 1) What specific grammar mistakes I made and how to fix them (give examples of what I said wrong), 2) What vocabulary or pronunciation I should improve, 3) What I did well. Be specific and helpful with real examples from our conversation. After the feedback, say a warm goodbye like "Keep practicing! See you next time! Bye bye!"' 
+              text: 'Now say: "Great job today! Now let me give you some feedback." Then analyze our conversation and give me honest, specific feedback in 2-3 sentences. Mention: 1) Specific grammar mistakes with examples, 2) What vocabulary to improve, 3) What I did well. After feedback, say "Keep practicing! Bye bye!"' 
             }]
           }],
           turnComplete: true
@@ -243,6 +295,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     if (message.setupComplete) {
       console.log('✅ Setup complete');
       setConversationStarted(true);
+      startTimeRef.current = Date.now();
       setStatus('Connected!');
       toast({ title: 'Ready!', description: 'LIA is listening!' });
       
@@ -255,7 +308,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
             clientContent: {
               turns: [{
                 role: 'user',
-                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly saying something like "Nice to talk to you!" or "Great to see you again!" (NOT "nice to meet you"), then ask me how my day is going or how I'm feeling today. Keep it friendly and simple!` }]
+                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly saying something like "Nice to talk to you!" or "Great to see you again!" (NOT "nice to meet you"), then ask me how my day is going. Keep it friendly and simple!` }]
               }],
               turnComplete: true
             }
@@ -286,7 +339,9 @@ export default function Conversation({ userId, userName }: ConversationProps) {
               if (sourcesRef.current.size === 0) {
                 console.log('🎵 Audio playback complete');
                 setIsSpeaking(false);
-                setStatus('Listening...');
+                if (!feedbackSaved) {
+                  setStatus('Listening...');
+                }
               }
             });
 
@@ -302,21 +357,31 @@ export default function Conversation({ userId, userName }: ConversationProps) {
 
         if (part.text) {
           console.log('💬 Text received:', part.text);
-          if (isFeedbackTime) {
+          if (isFeedbackTime && !feedbackSaved) {
             console.log('📝 Saving feedback to Firestore');
-            await saveConversationFeedback({
-              userId,
-              userName,
-              feedback: part.text,
-              topics: userTopics?.filter(t => t.enabled).map(t => t.name),
-              duration: 5 * 60 - timeRemaining,
-              date: new Date().toISOString()
-            });
-            setStatus('Feedback saved! Session complete.');
-            toast({ 
-              title: 'Feedback Saved!', 
-              description: 'Your teacher can review your progress.' 
-            });
+            try {
+              await saveConversationFeedback({
+                userId,
+                userName,
+                feedback: part.text,
+                topics: userTopics?.filter(t => t.enabled).map(t => t.name) || ['general conversation'],
+                duration: Math.floor((Date.now() - startTimeRef.current) / 1000),
+                date: new Date().toISOString()
+              });
+              setFeedbackSaved(true);
+              console.log('✅ Feedback saved successfully');
+              toast({ 
+                title: 'Feedback Saved!', 
+                description: 'Your teacher can review your progress.' 
+              });
+            } catch (error) {
+              console.error('❌ Failed to save feedback:', error);
+              toast({ 
+                title: 'Error', 
+                description: 'Failed to save feedback', 
+                variant: 'destructive' 
+              });
+            }
           }
         }
       }
@@ -329,10 +394,12 @@ export default function Conversation({ userId, userName }: ConversationProps) {
         }
         nextStartTimeRef.current = 0;
         setIsSpeaking(false);
-        setStatus('Listening...');
+        if (!feedbackSaved) {
+          setStatus('Listening...');
+        }
       }
     }
-  }, [userId, userName, userTopics, timeRemaining, isFeedbackTime, toast]);
+  }, [userId, userName, userTopics, isFeedbackTime, feedbackSaved, toast]);
 
   const initConnection = useCallback(async () => {
     if (isInitializingRef.current || hasInitializedRef.current) {
@@ -387,25 +454,11 @@ HOW TO TALK:
 7. If there's a pause or silence, ask a new question about the topics.
 
 CONVERSATION FLOW:
-- Start with a warm greeting and ask about their day (How was your day? How are you feeling today? etc)
+- Start with a warm greeting and ask about their day
 - Then naturally move to the practice topics: ${topicList}
 - Keep asking questions related to these topics
 - If the student stops talking, ask a related follow-up question
 - Make the conversation feel natural and friendly
-
-EXAMPLES OF GOOD RESPONSES:
-
-Student: "I like pizza"
-You: "Me too! What's your favorite topping?"
-
-Student: "Yesterday I go beach"
-You: "Nice! The beach sounds fun. Did you swim?"
-
-Student: "Eu gosto de viajar" (Portuguese)
-You: "Oh, you like to travel! Where do you want to go?" (Notice: Response is in English)
-
-Student: "Como se diz 'cachorro' em inglês?" (Portuguese)
-You: "That's 'dog' in English! Do you have a dog?"
 
 CRITICAL RULES:
 - SPEAK SLOWLY AND CLEARLY - this is the most important thing
@@ -419,14 +472,13 @@ CRITICAL RULES:
 - Keep questions simple and related to the topics
 
 IMPORTANT FOR FEEDBACK:
-- Pay close attention to the student's grammar mistakes throughout our conversation
-- Notice their vocabulary choices and pronunciation patterns
-- Remember specific examples of what they said so you can reference them in feedback
-- Take note of patterns - do they always forget articles? Do they mix up tenses?
-- Be honest and constructive in your feedback - students want to improve
+- Pay close attention to grammar mistakes throughout our conversation
+- Notice vocabulary choices and pronunciation patterns
+- Remember specific examples of what they said
+- Take note of patterns - do they forget articles? Mix up tenses?
 - When giving feedback, quote exactly what they said wrong as examples
 
-Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARLY. Keep it fun, simple, natural, and ask lots of questions to keep them talking!`;
+Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARLY. Keep it fun, simple, natural!`;
 
         const setupMessage = {
           setup: {
@@ -664,9 +716,10 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
         <div className="mb-4 flex items-center gap-2 text-white/80">
           <Clock className="w-5 h-5" />
           <span className="text-lg font-mono">{formatTime(timeRemaining)}</span>
-          {timeRemaining <= 40 && timeRemaining > 30 && <span className="text-sm text-orange-400 ml-2">Wrapping up...</span>}
+          {timeRemaining <= 60 && timeRemaining > 30 && <span className="text-sm text-orange-400 ml-2">Wrapping up...</span>}
           {timeRemaining <= 30 && timeRemaining > 0 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
-          {timeRemaining === 0 && <span className="text-sm text-red-400 ml-2">Finished</span>}
+          {timeRemaining <= 0 && timeRemaining > -BUFFER_TIME && <span className="text-sm text-blue-400 ml-2">Extra time...</span>}
+          {timeRemaining <= -BUFFER_TIME && <span className="text-sm text-red-400 ml-2">Finished</span>}
         </div>
       )}
 
@@ -680,7 +733,8 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
             'ring-4 ring-orange-400': isPreparingFeedback && !isFeedbackTime,
             'ring-4 ring-yellow-400': isFeedbackTime && timeRemaining > 0,
-            'ring-4 ring-red-400': timeRemaining === 0
+            'ring-4 ring-blue-400': timeRemaining <= 0 && timeRemaining > -BUFFER_TIME,
+            'ring-4 ring-red-400': timeRemaining <= -BUFFER_TIME || feedbackSaved
           }
         )}>
         <LiaAvatar />
