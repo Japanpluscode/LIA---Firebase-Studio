@@ -109,10 +109,10 @@ export async function updateUser(userId: string, name: string, email: string, pr
       profile,
       updatedAt: new Date().toISOString()
     });
-    return true;
+    return { success: true };
   } catch (error) {
     console.error('Error updating user:', error);
-    throw error;
+    return { success: false, error: String(error) };
   }
 }
 
@@ -158,19 +158,19 @@ export async function addTopic(userId: string, topicName: string) {
 export async function deleteTopic(userId: string, topicId: string) {
   try {
     await deleteDoc(doc(db, 'users', userId, 'topics', topicId));
-    return true;
+    return { success: true };
   } catch (error) {
     console.error('Error deleting topic:', error);
-    throw error;
+    return { success: false, error: String(error) };
   }
 }
 
 export async function toggleTopic(userId: string, topicId: string, enabled: boolean) {
   try {
     await updateDoc(doc(db, 'users', userId, 'topics', topicId), { enabled });
-    return true;
+    return { success: true };
   } catch (error) {
     console.error('Error toggling topic:', error);
-    throw error;
+    return { success: false, error: String(error) };
   }
 }
