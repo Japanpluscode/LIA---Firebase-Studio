@@ -123,6 +123,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const hasInitializedRef = useRef(false);
   const logCountRef = useRef(0);
   const startTimeRef = useRef<number>(0);
+  const isCleaningUpRef = useRef(false);
 
   const { toast } = useToast();
 
@@ -142,8 +143,8 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, [userId]);
 
   const startRecording = useCallback(async () => {
-    if (isRecording) {
-      console.log('⚠️ Already recording');
+    if (isRecording || isCleaningUpRef.current) {
+      console.log('⚠️ Already recording or cleaning up');
       return;
     }
 
@@ -258,14 +259,18 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   }, [isRecording, toast]);
 
   const stopRecording = useCallback(() => {
-    if (!isRecording) return;
+    if (!isRecording || isCleaningUpRef.current) return;
 
     console.log('🛑 Stopping recording...');
     setIsRecording(false);
 
     if (scriptProcessorRef.current && sourceNodeRef.current) {
-      scriptProcessorRef.current.disconnect();
-      sourceNodeRef.current.disconnect();
+      try {
+        scriptProcessorRef.current.disconnect();
+        sourceNodeRef.current.disconnect();
+      } catch (e) {
+        console.warn('Error disconnecting audio nodes:', e);
+      }
     }
 
     scriptProcessorRef.current = null;
@@ -298,7 +303,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       });
       
       stopRecording();
-      if (wsRef.current) {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.close();
       }
     }
@@ -412,7 +417,7 @@ Make it feel natural and warm, like a friend saying goodbye!`
               description: 'Thank you for practicing with LIA today!' 
             });
             
-            if (wsRef.current) {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
               wsRef.current.close();
             }
             return newTime;
@@ -738,14 +743,34 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
   useEffect(() => {
     return () => {
       console.log('🧹 Component UNMOUNTING');
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (isCleaningUpRef.current) return;
+      isCleaningUpRef.current = true;
       
-      if (!conversationStarted) return;
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      
+      if (!conversationStarted) {
+        isCleaningUpRef.current = false;
+        return;
+      }
       
       stopRecording();
-      wsRef.current?.close();
-      inputAudioContextRef.current?.close();
-      outputAudioContextRef.current?.close();
+      
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+      }
+      
+      if (inputAudioContextRef.current && inputAudioContextRef.current.state !== 'closed') {
+        inputAudioContextRef.current.close().catch(e => console.warn('Error closing input context:', e));
+      }
+      
+      if (outputAudioContextRef.current && outputAudioContextRef.current.state !== 'closed') {
+        outputAudioContextRef.current.close().catch(e => console.warn('Error closing output context:', e));
+      }
+      
+      isCleaningUpRef.current = false;
     };
   }, [conversationStarted, stopRecording]);
 
