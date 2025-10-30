@@ -87,7 +87,6 @@ async function decodeAudioData(
 
 const SILENCE_THRESHOLD = 0.005;
 const SILENCE_DURATION = 2000;
-const BASE_TIME = 5 * 60;
 const BUFFER_TIME = 30;
 
 export default function Conversation({ userId, userName }: ConversationProps) {
@@ -98,7 +97,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [userProfile, setUserProfile] = useState<string>('');
   const [userDuration, setUserDuration] = useState(5);
   const [userInstructions, setUserInstructions] = useState('');
-  const [timeRemaining, setTimeRemaining] = useState(BASE_TIME);
+  const [timeRemaining, setTimeRemaining] = useState(5 * 60);
   const [conversationStarted, setConversationStarted] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [isPreparingFeedback, setIsPreparingFeedback] = useState(false);
@@ -124,18 +123,41 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const logCountRef = useRef(0);
   const startTimeRef = useRef<number>(0);
   const isCleaningUpRef = useRef(false);
+  const baseTimeRef = useRef(5 * 60);
 
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log('📊 Fetching user data for:', userId);
+        
+        const user = await getUser(userId);
+        console.log('👤 User data received:', user);
+        
+        if (user) {
+          setUserProfile(user.profile || '');
+          
+          // Use conversationDuration from database
+          const duration = user.conversationDuration || 5;
+          setUserDuration(duration);
+          const durationInSeconds = duration * 60;
+          setTimeRemaining(durationInSeconds);
+          baseTimeRef.current = durationInSeconds;
+          console.log('⏱️ Duration set to:', duration, 'minutes (', durationInSeconds, 'seconds)');
+          
+          // Use conversationInstructions from database
+          const instructions = user.conversationInstructions || '';
+          setUserInstructions(instructions);
+          console.log('📝 Instructions:', instructions || '(none)');
+        }
+        
         const topics = await getTopics(userId);
         setUserTopics(topics);
-        const user = await getUser(userId);
-        setUserProfile(user?.profile || '');
+        console.log('📚 Topics loaded:', topics.length, 'topics');
+        
       } catch (error) {
-        console.error("Failed to fetch data", error);
+        console.error("❌ Failed to fetch data", error);
         setUserTopics([{ name: 'general conversation', enabled: true }]);
       }
     };
@@ -290,7 +312,7 @@ export default function Conversation({ userId, userName }: ConversationProps) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
       
-      const actualDuration = timeRemaining < 0 ? BASE_TIME : BASE_TIME - timeRemaining;
+      const actualDuration = timeRemaining < 0 ? baseTimeRef.current : baseTimeRef.current - timeRemaining;
       const mins = Math.floor(actualDuration / 60);
       const secs = actualDuration % 60;
       
@@ -408,7 +430,7 @@ Make it feel natural and warm, like a friend saying goodbye!`
           
           if (newTime <= -BUFFER_TIME && !feedbackSaved) {
             stopRecording();
-            const totalDuration = BASE_TIME + BUFFER_TIME;
+            const totalDuration = baseTimeRef.current + BUFFER_TIME;
             const mins = Math.floor(totalDuration / 60);
             const secs = totalDuration % 60;
             setStatus(`Conversation finished! Total time: ${mins}:${secs.toString().padStart(2, '0')}`);
@@ -444,7 +466,6 @@ Make it feel natural and warm, like a friend saying goodbye!`
   };
 
   const initAudio = useCallback(() => {
-    // Check if contexts exist AND are not closed
     if (inputAudioContextRef.current && 
         outputAudioContextRef.current && 
         inputAudioContextRef.current.state !== 'closed' && 
@@ -455,7 +476,6 @@ Make it feel natural and warm, like a friend saying goodbye!`
 
     console.log('🔊 Initializing audio contexts...');
     
-    // Close old contexts if they exist and are not already closed
     if (inputAudioContextRef.current && inputAudioContextRef.current.state !== 'closed') {
       inputAudioContextRef.current.close().catch(() => {});
     }
@@ -463,7 +483,6 @@ Make it feel natural and warm, like a friend saying goodbye!`
       outputAudioContextRef.current.close().catch(() => {});
     }
     
-    // Create fresh contexts
     inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     
@@ -628,7 +647,10 @@ Name: ${userName}
 Profile: ${userProfile || 'Getting to know them'}
 Topics for today: ${topicList}
 
-YOUR PERSONALITY:
+${userInstructions ? `⭐ SPECIAL TEACHER INSTRUCTIONS:
+${userInstructions}
+
+` : ''}YOUR PERSONALITY:
 - Talk like a friend, not a teacher
 - Keep it simple and natural
 - Be patient and encouraging
@@ -744,7 +766,7 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
       toast({ title: 'Setup Error', description: String(error), variant: 'destructive' });
       isInitializingRef.current = false;
     }
-  }, [userId, userName, userProfile, userTopics, toast, handleWebSocketMessage, initAudio]);
+  }, [userId, userName, userProfile, userTopics, userInstructions, toast, handleWebSocketMessage, initAudio]);
 
   const handleClick = async () => {
     if (conversationStarted || isInitializingRef.current) {
@@ -789,7 +811,6 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
         outputAudioContextRef.current.close().catch(e => console.warn('Error closing output context:', e));
       }
       
-      // Reset all flags
       hasInitializedRef.current = false;
       isInitializingRef.current = false;
       isCleaningUpRef.current = false;
