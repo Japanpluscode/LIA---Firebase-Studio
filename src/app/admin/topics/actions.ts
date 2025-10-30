@@ -24,6 +24,8 @@ export interface User {
   name: string;
   email: string;
   profile: string;
+  conversationDuration: number; // NEW: in minutes
+  conversationInstructions: string; // NEW: custom instructions for L.I.A.
 }
 
 export async function getUsers() {
@@ -32,11 +34,14 @@ export async function getUsers() {
     const users: User[] = [];
     
     usersSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       users.push({
         id: docSnap.id,
-        name: docSnap.data().name || '',
-        email: docSnap.data().email || '',
-        profile: docSnap.data().profile || ''
+        name: data.name || '',
+        email: data.email || '',
+        profile: data.profile || '',
+        conversationDuration: data.conversationDuration || 5, // Default 5 minutes
+        conversationInstructions: data.conversationInstructions || ''
       });
     });
     
@@ -52,11 +57,14 @@ export async function getUser(userId: string) {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (!userDoc.exists()) return null;
     
+    const data = userDoc.data();
     return {
       id: userDoc.id,
-      name: userDoc.data().name || '',
-      email: userDoc.data().email || '',
-      profile: userDoc.data().profile || ''
+      name: data.name || '',
+      email: data.email || '',
+      profile: data.profile || '',
+      conversationDuration: data.conversationDuration || 5, // Default 5 minutes
+      conversationInstructions: data.conversationInstructions || ''
     };
   } catch (error) {
     console.error('Error getting user:', error);
@@ -73,11 +81,14 @@ export async function getUserByEmail(email: string) {
     if (querySnapshot.empty) return null;
     
     const userDoc = querySnapshot.docs[0];
+    const data = userDoc.data();
     return {
       id: userDoc.id,
-      name: userDoc.data().name || '',
-      email: userDoc.data().email || '',
-      profile: userDoc.data().profile || ''
+      name: data.name || '',
+      email: data.email || '',
+      profile: data.profile || '',
+      conversationDuration: data.conversationDuration || 5,
+      conversationInstructions: data.conversationInstructions || ''
     };
   } catch (error) {
     console.error('Error getting user by email:', error);
@@ -85,13 +96,21 @@ export async function getUserByEmail(email: string) {
   }
 }
 
-export async function addUser(name: string, email: string, profile: string) {
+export async function addUser(
+  name: string, 
+  email: string, 
+  profile: string,
+  conversationDuration: number = 5,
+  conversationInstructions: string = ''
+) {
   try {
     const userRef = doc(collection(db, 'users'));
     await setDoc(userRef, {
       name,
       email,
       profile,
+      conversationDuration,
+      conversationInstructions,
       createdAt: new Date().toISOString()
     });
     return userRef.id;
@@ -101,12 +120,21 @@ export async function addUser(name: string, email: string, profile: string) {
   }
 }
 
-export async function updateUser(userId: string, name: string, email: string, profile: string) {
+export async function updateUser(
+  userId: string, 
+  name: string, 
+  email: string, 
+  profile: string,
+  conversationDuration: number,
+  conversationInstructions: string
+) {
   try {
     await updateDoc(doc(db, 'users', userId), {
       name,
       email,
       profile,
+      conversationDuration,
+      conversationInstructions,
       updatedAt: new Date().toISOString()
     });
     return { success: true };

@@ -87,8 +87,8 @@ async function decodeAudioData(
 
 const SILENCE_THRESHOLD = 0.005;
 const SILENCE_DURATION = 2000;
-const BASE_TIME = 5 * 60; // 5 minutes base conversation time
-const BUFFER_TIME = 30; // 30 seconds buffer for feedback
+const BASE_TIME = 5 * 60;
+const BUFFER_TIME = 30;
 
 export default function Conversation({ userId, userName }: ConversationProps) {
   const [isRecording, setIsRecording] = useState(false);
@@ -96,8 +96,11 @@ export default function Conversation({ userId, userName }: ConversationProps) {
   const [status, setStatus] = useState('Click to start');
   const [userTopics, setUserTopics] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<string>('');
+  const [userDuration, setUserDuration] = useState(5);
+  const [userInstructions, setUserInstructions] = useState('');
   const [timeRemaining, setTimeRemaining] = useState(BASE_TIME);
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
   const [isPreparingFeedback, setIsPreparingFeedback] = useState(false);
   const [isFeedbackTime, setIsFeedbackTime] = useState(false);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
@@ -137,415 +140,6 @@ export default function Conversation({ userId, userName }: ConversationProps) {
     };
     fetchData();
   }, [userId]);
-
-  // Check for early completion
-  useEffect(() => {
-    if (feedbackSaved && !isSpeaking && isFeedbackTime && timerIntervalRef.current) {
-      console.log('✅ Feedback complete - ending conversation early');
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-      
-      const actualDuration = BASE_TIME - timeRemaining;
-      const mins = Math.floor(actualDuration / 60);
-      const secs = actualDuration % 60;
-      
-      setStatus(`Conversation finished! Time used: ${mins}:${secs.toString().padStart(2, '0')}`);
-      toast({ 
-        title: 'Session Complete!', 
-        description: `Completed in ${mins}:${secs.toString().padStart(2, '0')}` 
-      });
-      
-      stopRecording();
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    }
-  }, [feedbackSaved, isSpeaking, isFeedbackTime, timeRemaining, toast]);
-
-  useEffect(() => {
-    if (conversationStarted && !feedbackSaved) {
-      timerIntervalRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          const newTime = prev - 1;
-          
-          // Wrap-up at 1 minute (60 seconds)
-          if (newTime === 60 && !isPreparingFeedback) {
-            setIsPreparingFeedback(true);
-            prepareForFeedback();
-          }
-          
-          // Feedback at 30 seconds
-          if (newTime === 30 && !isFeedbackTime) {
-            setIsFeedbackTime(true);
-            requestFeedback();
-          }
-          
-          // Timer hits 0 - enter buffer time
-          if (newTime === 0 && !inBufferTime) {
-            setInBufferTime(true);
-            setStatus('Extra time for feedback...');
-            toast({ 
-              title: 'Finishing up', 
-              description: 'LIA is completing your feedback' 
-            });
-            return -1; // Start counting negative
-          }
-          
-          // Hard stop at -30 seconds (30 seconds of buffer)
-          if (newTime <= -BUFFER_TIME) {
-            stopRecording();
-            const totalDuration = BASE_TIME + BUFFER_TIME;
-            const mins = Math.floor(totalDuration / 60);
-            const secs = totalDuration % 60;
-            setStatus(`Conversation finished! Total time: ${mins}:${secs.toString().padStart(2, '0')}`);
-            toast({ 
-              title: 'Session Complete!', 
-              description: 'Thank you for practicing with LIA today!' 
-            });
-            
-            if (wsRef.current) {
-              wsRef.current.close();
-            }
-            return newTime;
-          }
-          
-          return newTime;
-        });
-      }, 1000);
-      
-      return () => {
-        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      };
-    }
-  }, [conversationStarted, isPreparingFeedback, isFeedbackTime, feedbackSaved, inBufferTime, toast]);
-
-  const formatTime = (seconds: number) => {
-    if (seconds < 0) {
-      // Show as extra time during buffer
-      const extraTime = Math.abs(seconds);
-      return `+0:${extraTime.toString().padStart(2, '0')}`;
-    }
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const initAudio = useCallback(() => {
-    if (inputAudioContextRef.current && outputAudioContextRef.current) {
-      console.log('🔊 Audio contexts already initialized');
-      return;
-    }
-
-    console.log('🔊 Initializing audio contexts...');
-    inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-    outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    
-    nextStartTimeRef.current = outputAudioContextRef.current.currentTime;
-    
-    inputNodeRef.current = inputAudioContextRef.current.createGain();
-    outputNodeRef.current = outputAudioContextRef.current.createGain();
-    outputNodeRef.current.connect(outputAudioContextRef.current.destination);
-    
-    console.log('✅ Audio contexts initialized');
-  }, []);
-
-  const prepareForFeedback = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('⏰ Preparing for feedback (1 minute remaining)');
-      setStatus('Wrapping up...');
-      toast({ title: 'Almost done!', description: 'LIA will give feedback soon...' });
-      
-      wsRef.current.send(JSON.stringify({
-        clientContent: {
-          turns: [{
-            role: 'user',
-            parts: [{ 
-              text: 'We are almost finished with our conversation today. Please naturally wrap up what we were talking about in just one sentence, then tell me "In a moment, I\'ll give you some feedback about our conversation." Keep it very brief.' 
-            }]
-          }],
-          turnComplete: true
-        }
-      }));
-    }
-  }, [toast]);
-
-  const requestFeedback = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('📝 Requesting feedback from LIA (30 seconds remaining)');
-      setStatus('Getting feedback...');
-      toast({ title: 'Feedback Time!', description: 'LIA is preparing your feedback...' });
-      
-      wsRef.current.send(JSON.stringify({
-        clientContent: {
-          turns: [{
-            role: 'user',
-            parts: [{ 
-              text: 'Now say: "Great job today! Now let me give you some feedback." Then analyze our conversation and give me honest, specific feedback in 2-3 sentences. Mention: 1) Specific grammar mistakes with examples, 2) What vocabulary to improve, 3) What I did well. After feedback, say "Keep practicing! Bye bye!"' 
-            }]
-          }],
-          turnComplete: true
-        }
-      }));
-    }
-  }, [toast]);
-
-  const handleWebSocketMessage = useCallback(async (message: any) => {
-    console.log('📨 Message received:', message);
-
-    if (message.setupComplete) {
-      console.log('✅ Setup complete');
-      setConversationStarted(true);
-      startTimeRef.current = Date.now();
-      setStatus('Connected!');
-      toast({ title: 'Ready!', description: 'LIA is listening!' });
-      
-      await startRecording();
-
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          console.log('👋 Sending warm greeting request');
-          wsRef.current.send(JSON.stringify({
-            clientContent: {
-              turns: [{
-                role: 'user',
-                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly saying something like "Nice to talk to you!" or "Great to see you again!" (NOT "nice to meet you"), then ask me how my day is going. Keep it friendly and simple!` }]
-              }],
-              turnComplete: true
-            }
-          }));
-        }
-      }, 1500);
-    }
-
-    if (message.serverContent) {
-      const parts = message.serverContent.modelTurn?.parts || [];
-      
-      for (const part of parts) {
-        if (part.inlineData?.mimeType?.startsWith('audio/')) {
-          console.log('🔊 Audio chunk received');
-          const audioCtx = outputAudioContextRef.current;
-          if (!audioCtx) continue;
-
-          try {
-            nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioCtx.currentTime);
-
-            const audioBuffer = await decodeAudioData(decode(part.inlineData.data), audioCtx, 24000, 1);
-            const source = audioCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(outputNodeRef.current!);
-            
-            source.addEventListener('ended', () => {
-              sourcesRef.current.delete(source);
-              if (sourcesRef.current.size === 0) {
-                console.log('🎵 Audio playback complete');
-                setIsSpeaking(false);
-                if (!feedbackSaved) {
-                  setStatus('Listening...');
-                }
-              }
-            });
-
-            source.start(nextStartTimeRef.current);
-            nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
-            sourcesRef.current.add(source);
-            setIsSpeaking(true);
-            setStatus('LIA is speaking...');
-          } catch (error) {
-            console.error('Audio decode error:', error);
-          }
-        }
-
-        if (part.text) {
-          console.log('💬 Text received:', part.text);
-          if (isFeedbackTime && !feedbackSaved) {
-            console.log('📝 Saving feedback to Firestore');
-            try {
-              await saveConversationFeedback({
-                userId,
-                userName,
-                feedback: part.text,
-                topics: userTopics?.filter(t => t.enabled).map(t => t.name) || ['general conversation'],
-                duration: Math.floor((Date.now() - startTimeRef.current) / 1000),
-                date: new Date().toISOString()
-              });
-              setFeedbackSaved(true);
-              console.log('✅ Feedback saved successfully');
-              toast({ 
-                title: 'Feedback Saved!', 
-                description: 'Your teacher can review your progress.' 
-              });
-            } catch (error) {
-              console.error('❌ Failed to save feedback:', error);
-              toast({ 
-                title: 'Error', 
-                description: 'Failed to save feedback', 
-                variant: 'destructive' 
-              });
-            }
-          }
-        }
-      }
-
-      if (message.serverContent.interrupted) {
-        console.log('⚠️ AI interrupted');
-        for (const source of sourcesRef.current.values()) {
-          source.stop();
-          sourcesRef.current.delete(source);
-        }
-        nextStartTimeRef.current = 0;
-        setIsSpeaking(false);
-        if (!feedbackSaved) {
-          setStatus('Listening...');
-        }
-      }
-    }
-  }, [userId, userName, userTopics, isFeedbackTime, feedbackSaved, toast]);
-
-  const initConnection = useCallback(async () => {
-    if (isInitializingRef.current || hasInitializedRef.current) {
-      console.log('⚠️ Already initializing or initialized');
-      return;
-    }
-
-    isInitializingRef.current = true;
-
-    try {
-      console.log('🚀 Initializing connection...');
-      
-      initAudio();
-
-      const response = await fetch('/api/gemini-key');
-      if (!response.ok) {
-        throw new Error('Failed to get API key');
-      }
-      const { apiKey } = await response.json();
-      console.log('🔑 API key received');
-
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-      wsRef.current = new WebSocket(wsUrl);
-
-      wsRef.current.onopen = () => {
-        console.log('🔌 WebSocket connected');
-        hasInitializedRef.current = true;
-        
-        const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general conversation';
-        
-        const systemInstruction = `You are LIA, a warm and friendly English conversation partner helping ${userName} practice speaking English naturally.
-
-STUDENT INFO:
-Name: ${userName}
-Profile: ${userProfile || 'Getting to know them'}
-Topics for today: ${topicList}
-
-YOUR PERSONALITY:
-- Talk like a friend, not a teacher
-- Keep it simple and natural
-- Be patient and encouraging
-- Show genuine interest in what they say
-- Ask lots of questions to keep the conversation flowing
-
-HOW TO TALK:
-1. **CRITICAL INSTRUCTION: Speak clearly and at a slow, easy-to-understand pace. Enunciate your words carefully and pause between sentences so the student can understand everything. This is very important for language learning.**
-2. Keep responses VERY SHORT - just 1-2 sentences maximum.
-3. ALWAYS ask a question to keep the conversation going.
-4. If student speaks Portuguese, understand it perfectly but ALWAYS respond in simple English.
-5. NEVER speak Portuguese - only English responses.
-6. Don't use complicated words or grammar terms.
-7. If there's a pause or silence, ask a new question about the topics.
-
-CONVERSATION FLOW:
-- Start with a warm greeting and ask about their day
-- Then naturally move to the practice topics: ${topicList}
-- Keep asking questions related to these topics
-- If the student stops talking, ask a related follow-up question
-- Make the conversation feel natural and friendly
-
-CRITICAL RULES:
-- SPEAK SLOWLY AND CLEARLY - this is the most important thing
-- MAXIMUM 1-2 sentences per response
-- ALWAYS end with a question
-- Use easy, everyday words
-- Be encouraging and positive
-- If they make mistakes, just say it correctly in your response naturally
-- NEVER speak Portuguese - only understand it
-- If student is silent for a moment, ask a new question about: ${topicList}
-- Keep questions simple and related to the topics
-
-IMPORTANT FOR FEEDBACK:
-- Pay close attention to grammar mistakes throughout our conversation
-- Notice vocabulary choices and pronunciation patterns
-- Remember specific examples of what they said
-- Take note of patterns - do they forget articles? Mix up tenses?
-- When giving feedback, quote exactly what they said wrong as examples
-
-Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARLY. Keep it fun, simple, natural!`;
-
-        const setupMessage = {
-          setup: {
-            model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: { 
-                  prebuiltVoiceConfig: { 
-                    voiceName: 'Aoede' 
-                  } 
-                }
-              }
-            },
-            systemInstruction: { parts: [{ text: systemInstruction }] }
-          }
-        };
-
-        console.log('📤 Sending setup');
-        wsRef.current?.send(JSON.stringify(setupMessage));
-      };
-
-      wsRef.current.onmessage = async (event) => {
-        try {
-          let messageData: string;
-          
-          if (event.data instanceof Blob) {
-            messageData = await event.data.text();
-          } else if (typeof event.data === 'string') {
-            messageData = event.data;
-          } else {
-            console.warn('Unknown message type:', typeof event.data);
-            return;
-          }
-
-          try {
-            const message = JSON.parse(messageData);
-            await handleWebSocketMessage(message);
-          } catch (parseError) {
-            console.error('JSON parse error:', parseError);
-          }
-        } catch (error) {
-          console.error('Message handler error:', error);
-        }
-      };
-
-      wsRef.current.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-        setStatus('Connection error');
-        toast({ title: 'Connection Error', variant: 'destructive' });
-        isInitializingRef.current = false;
-      };
-
-      wsRef.current.onclose = (event) => {
-        console.log('🔌 WebSocket closed:', event.code, event.reason);
-        setStatus('Session ended');
-        setConversationStarted(false);
-        hasInitializedRef.current = false;
-        isInitializingRef.current = false;
-      };
-
-    } catch (error) {
-      console.error('❌ Init error:', error);
-      toast({ title: 'Setup Error', description: String(error), variant: 'destructive' });
-      isInitializingRef.current = false;
-    }
-  }, [userId, userName, userProfile, userTopics, toast, handleWebSocketMessage, initAudio]);
 
   const startRecording = useCallback(async () => {
     if (isRecording) {
@@ -685,6 +279,451 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
     setStatus('Recording stopped');
   }, [isRecording]);
 
+  useEffect(() => {
+    if (feedbackSaved && !isSpeaking && timerIntervalRef.current) {
+      console.log('✅ Feedback complete and LIA stopped speaking - ending conversation NOW');
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+      
+      const actualDuration = timeRemaining < 0 ? BASE_TIME : BASE_TIME - timeRemaining;
+      const mins = Math.floor(actualDuration / 60);
+      const secs = actualDuration % 60;
+      
+      setStatus(`Conversation finished! Time used: ${mins}:${secs.toString().padStart(2, '0')}`);
+      setInBufferTime(false);
+      
+      toast({ 
+        title: 'Session Complete!', 
+        description: `Great job! Duration: ${mins}:${secs.toString().padStart(2, '0')}` 
+      });
+      
+      stopRecording();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    }
+  }, [feedbackSaved, isSpeaking, timeRemaining, toast, stopRecording]);
+
+  const prepareForFeedback = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('⏰ Preparing for feedback (1 minute remaining) with natural interruption');
+      setStatus('Wrapping up...');
+      toast({ title: 'Almost done!', description: 'LIA will give feedback soon...' });
+      
+      wsRef.current.send(JSON.stringify({
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ 
+              text: `NATURAL WRAP-UP INSTRUCTION:
+              
+If I'm currently speaking, politely interrupt me by saying something like:
+- "Sorry to interrupt, but our time is almost up! Let me wrap up what we were talking about..."
+- "I hate to cut you off, but we need to finish soon. Just to complete our thought..."
+- "Hold on - we're running out of time! Let me quickly finish this point..."
+
+If I just finished speaking or there's a natural pause, transition smoothly:
+- "Perfect timing! Our practice session is almost done. Let me just wrap this up..."
+- "Great! We're almost at the end of our time. To finish up..."
+- "Excellent! Before we end, let me quickly complete this thought..."
+
+After interrupting/transitioning naturally, wrap up the current topic in ONE SHORT SENTENCE, then say: "In just a moment, I'll give you some feedback about our conversation today."
+
+Keep it VERY BRIEF and NATURAL - like a real friend would do!` 
+            }]
+          }],
+          turnComplete: true
+        }
+      }));
+    }
+  }, [toast]);
+
+  const requestFeedback = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('📝 Requesting feedback from LIA (30 seconds remaining)');
+      setStatus('Getting feedback...');
+      toast({ title: 'Feedback Time!', description: 'LIA is preparing your feedback...' });
+      
+      wsRef.current.send(JSON.stringify({
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ 
+              text: `TIME FOR FEEDBACK:
+
+Now say: "Okay! Now for your feedback..."
+
+Then give me HONEST, SPECIFIC feedback in just 2-3 sentences:
+
+1. ONE specific grammar mistake I made (quote exactly what I said and what I should have said)
+2. ONE vocabulary suggestion (a better word I could use)
+3. ONE thing I did really well today
+
+Keep it friendly, encouraging, and SPECIFIC with real examples from our conversation!
+
+After feedback, say something like:
+- "Great job today! Keep practicing and I'll see you next time!"
+- "You're doing awesome! Can't wait to chat again!"
+- "Nice work! See you in our next session!"
+
+Make it feel natural and warm, like a friend saying goodbye!` 
+            }]
+          }],
+          turnComplete: true
+        }
+      }));
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (conversationStarted && !feedbackSaved) {
+      timerIntervalRef.current = setInterval(() => {
+        setTimeRemaining((prev) => {
+          const newTime = prev - 1;
+          
+          if (newTime === 60 && !isPreparingFeedback) {
+            setIsPreparingFeedback(true);
+            prepareForFeedback();
+          }
+          
+          if (newTime === 30 && !isFeedbackTime) {
+            setIsFeedbackTime(true);
+            requestFeedback();
+          }
+          
+          if (newTime === 0 && !inBufferTime) {
+            setInBufferTime(true);
+            setStatus('Extra time for feedback...');
+            toast({ 
+              title: 'Finishing up', 
+              description: 'LIA is completing your feedback' 
+            });
+            return -1;
+          }
+          
+          if (newTime <= -BUFFER_TIME && !feedbackSaved) {
+            stopRecording();
+            const totalDuration = BASE_TIME + BUFFER_TIME;
+            const mins = Math.floor(totalDuration / 60);
+            const secs = totalDuration % 60;
+            setStatus(`Conversation finished! Total time: ${mins}:${secs.toString().padStart(2, '0')}`);
+            toast({ 
+              title: 'Session Complete!', 
+              description: 'Thank you for practicing with LIA today!' 
+            });
+            
+            if (wsRef.current) {
+              wsRef.current.close();
+            }
+            return newTime;
+          }
+          
+          return newTime;
+        });
+      }, 1000);
+      
+      return () => {
+        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      };
+    }
+  }, [conversationStarted, isPreparingFeedback, isFeedbackTime, feedbackSaved, inBufferTime, toast, prepareForFeedback, requestFeedback, stopRecording]);
+
+  const formatTime = (seconds: number) => {
+    if (seconds < 0) {
+      const extraTime = Math.abs(seconds);
+      return `+0:${extraTime.toString().padStart(2, '0')}`;
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const initAudio = useCallback(() => {
+    if (inputAudioContextRef.current && outputAudioContextRef.current) {
+      console.log('🔊 Audio contexts already initialized');
+      return;
+    }
+
+    console.log('🔊 Initializing audio contexts...');
+    inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+    outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    
+    nextStartTimeRef.current = outputAudioContextRef.current.currentTime;
+    
+    inputNodeRef.current = inputAudioContextRef.current.createGain();
+    outputNodeRef.current = outputAudioContextRef.current.createGain();
+    outputNodeRef.current.connect(outputAudioContextRef.current.destination);
+    
+    console.log('✅ Audio contexts initialized');
+  }, []);
+
+  const handleWebSocketMessage = useCallback(async (message: any) => {
+    console.log('📨 Message received:', message);
+
+    if (message.setupComplete) {
+      console.log('✅ Setup complete');
+      setConversationStarted(true);
+      startTimeRef.current = Date.now();
+      setStatus('Connected!');
+      toast({ title: 'Ready!', description: 'LIA is listening!' });
+      
+      await startRecording();
+
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log('👋 Sending warm greeting request');
+          wsRef.current.send(JSON.stringify({
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{ text: `Hi LIA! My name is ${userName}. Please greet me warmly saying something like "Nice to talk to you!" or "Great to see you again!" (NOT "nice to meet you"), then ask me how my day is going. Keep it friendly and simple!` }]
+              }],
+              turnComplete: true
+            }
+          }));
+        }
+      }, 1500);
+    }
+
+    if (message.serverContent) {
+      const parts = message.serverContent.modelTurn?.parts || [];
+      
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('audio/')) {
+          console.log('🔊 Audio chunk received');
+          const audioCtx = outputAudioContextRef.current;
+          if (!audioCtx) continue;
+
+          try {
+            nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioCtx.currentTime);
+
+            const audioBuffer = await decodeAudioData(decode(part.inlineData.data), audioCtx, 24000, 1);
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(outputNodeRef.current!);
+            
+            source.addEventListener('ended', () => {
+              sourcesRef.current.delete(source);
+              if (sourcesRef.current.size === 0) {
+                console.log('🎵 Audio playback complete');
+                setIsSpeaking(false);
+                
+                if (!feedbackSaved) {
+                  setStatus('Listening...');
+                }
+              }
+            });
+
+            source.start(nextStartTimeRef.current);
+            nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
+            sourcesRef.current.add(source);
+            setIsSpeaking(true);
+            setStatus('LIA is speaking...');
+          } catch (error) {
+            console.error('Audio decode error:', error);
+          }
+        }
+
+        if (part.text) {
+          console.log('💬 Text received:', part.text);
+          if (isFeedbackTime && !feedbackSaved) {
+            console.log('📝 Saving feedback to Firestore');
+            try {
+              await saveConversationFeedback({
+                userId,
+                userName,
+                feedback: part.text,
+                topics: userTopics?.filter(t => t.enabled).map(t => t.name) || ['general conversation'],
+                duration: Math.floor((Date.now() - startTimeRef.current) / 1000),
+                date: new Date().toISOString()
+              });
+              setFeedbackSaved(true);
+              console.log('✅ Feedback saved successfully');
+              toast({ 
+                title: 'Feedback Saved!', 
+                description: 'Your teacher can review your progress.' 
+              });
+            } catch (error) {
+              console.error('❌ Failed to save feedback:', error);
+              toast({ 
+                title: 'Error', 
+                description: 'Failed to save feedback', 
+                variant: 'destructive' 
+              });
+            }
+          }
+        }
+      }
+
+      if (message.serverContent.interrupted) {
+        console.log('⚠️ AI interrupted');
+        for (const source of sourcesRef.current.values()) {
+          source.stop();
+          sourcesRef.current.delete(source);
+        }
+        nextStartTimeRef.current = 0;
+        setIsSpeaking(false);
+        if (!feedbackSaved) {
+          setStatus('Listening...');
+        }
+      }
+    }
+  }, [userId, userName, userTopics, isFeedbackTime, feedbackSaved, toast, startRecording]);
+
+  const initConnection = useCallback(async () => {
+    if (isInitializingRef.current || hasInitializedRef.current) {
+      console.log('⚠️ Already initializing or initialized');
+      return;
+    }
+
+    isInitializingRef.current = true;
+
+    try {
+      console.log('🚀 Initializing connection...');
+      
+      initAudio();
+
+      const response = await fetch('/api/gemini-key');
+      if (!response.ok) {
+        throw new Error('Failed to get API key');
+      }
+      const { apiKey } = await response.json();
+      console.log('🔑 API key received');
+
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log('🔌 WebSocket connected');
+        hasInitializedRef.current = true;
+        
+        const topicList = userTopics?.filter(t => t.enabled).map(t => t.name).join(', ') || 'general conversation';
+        
+        const systemInstruction = `You are LIA, a warm and friendly English conversation partner helping ${userName} practice speaking English naturally.
+
+STUDENT INFO:
+Name: ${userName}
+Profile: ${userProfile || 'Getting to know them'}
+Topics for today: ${topicList}
+
+YOUR PERSONALITY:
+- Talk like a friend, not a teacher
+- Keep it simple and natural
+- Be patient and encouraging
+- Show genuine interest in what they say
+- Ask lots of questions to keep the conversation flowing
+
+HOW TO TALK:
+1. **CRITICAL INSTRUCTION: Speak clearly and at a slow, easy-to-understand pace. Enunciate your words carefully and pause between sentences so the student can understand everything. This is very important for language learning.**
+2. Keep responses VERY SHORT - just 1-2 sentences maximum.
+3. ALWAYS ask a question to keep the conversation going.
+4. If student speaks Portuguese, understand it perfectly but ALWAYS respond in simple English.
+5. NEVER speak Portuguese - only English responses.
+6. Don't use complicated words or grammar terms.
+7. If there's a pause or silence, ask a new question about the topics.
+
+CONVERSATION FLOW:
+- Start with a warm greeting and ask about their day
+- Then naturally move to the practice topics: ${topicList}
+- Keep asking questions related to these topics
+- If the student stops talking, ask a related follow-up question
+- Make the conversation feel natural and friendly
+
+CRITICAL RULES:
+- SPEAK SLOWLY AND CLEARLY - this is the most important thing
+- MAXIMUM 1-2 sentences per response
+- ALWAYS end with a question
+- Use easy, everyday words
+- Be encouraging and positive
+- If they make mistakes, just say it correctly in your response naturally
+- NEVER speak Portuguese - only understand it
+- If student is silent for a moment, ask a new question about: ${topicList}
+- Keep questions simple and related to the topics
+
+NATURAL INTERRUPTIONS & TIME MANAGEMENT:
+- When wrapping up or giving feedback, be NATURAL and POLITE
+- If you need to interrupt, use friendly phrases like:
+  * "Sorry to interrupt, but..."
+  * "I hate to cut you off, but..."
+  * "Hold that thought..."
+- Make transitions smooth and conversational, like a real friend would
+
+IMPORTANT FOR FEEDBACK:
+- Pay close attention to grammar mistakes throughout our conversation
+- Notice vocabulary choices and pronunciation patterns
+- Remember specific examples of what they said
+- Take note of patterns - do they forget articles? Mix up tenses?
+- When giving feedback, quote exactly what they said wrong as examples
+
+Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARLY. Keep it fun, simple, natural!`;
+
+        const setupMessage = {
+          setup: {
+            model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: { 
+                  prebuiltVoiceConfig: { 
+                    voiceName: 'Aoede' 
+                  } 
+                }
+              }
+            },
+            systemInstruction: { parts: [{ text: systemInstruction }] }
+          }
+        };
+
+        console.log('📤 Sending setup');
+        wsRef.current?.send(JSON.stringify(setupMessage));
+      };
+
+      wsRef.current.onmessage = async (event) => {
+        try {
+          let messageData: string;
+          
+          if (event.data instanceof Blob) {
+            messageData = await event.data.text();
+          } else if (typeof event.data === 'string') {
+            messageData = event.data;
+          } else {
+            console.warn('Unknown message type:', typeof event.data);
+            return;
+          }
+
+          try {
+            const message = JSON.parse(messageData);
+            await handleWebSocketMessage(message);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+          }
+        } catch (error) {
+          console.error('Message handler error:', error);
+        }
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+        setStatus('Connection error');
+        toast({ title: 'Connection Error', variant: 'destructive' });
+        isInitializingRef.current = false;
+      };
+
+      wsRef.current.onclose = (event) => {
+        console.log('🔌 WebSocket closed:', event.code, event.reason);
+        setStatus('Session ended');
+        setConversationStarted(false);
+        hasInitializedRef.current = false;
+        isInitializingRef.current = false;
+      };
+
+    } catch (error) {
+      console.error('❌ Init error:', error);
+      toast({ title: 'Setup Error', description: String(error), variant: 'destructive' });
+      isInitializingRef.current = false;
+    }
+  }, [userId, userName, userProfile, userTopics, toast, handleWebSocketMessage, initAudio]);
+
   const handleClick = async () => {
     if (conversationStarted || isInitializingRef.current) {
       console.log('⚠️ Conversation already in progress or initializing');
@@ -708,7 +747,7 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
       inputAudioContextRef.current?.close();
       outputAudioContextRef.current?.close();
     };
-  }, []);
+  }, [conversationStarted, stopRecording]);
 
   return (
     <div className="flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto">
@@ -718,8 +757,8 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
           <span className="text-lg font-mono">{formatTime(timeRemaining)}</span>
           {timeRemaining <= 60 && timeRemaining > 30 && <span className="text-sm text-orange-400 ml-2">Wrapping up...</span>}
           {timeRemaining <= 30 && timeRemaining > 0 && <span className="text-sm text-yellow-400 ml-2">Feedback time!</span>}
-          {timeRemaining <= 0 && timeRemaining > -BUFFER_TIME && <span className="text-sm text-blue-400 ml-2">Extra time...</span>}
-          {timeRemaining <= -BUFFER_TIME && <span className="text-sm text-red-400 ml-2">Finished</span>}
+          {timeRemaining <= 0 && timeRemaining > -BUFFER_TIME && !feedbackSaved && <span className="text-sm text-blue-400 ml-2">Finishing feedback...</span>}
+          {feedbackSaved && <span className="text-sm text-green-400 ml-2">✓ Complete!</span>}
         </div>
       )}
 
@@ -732,9 +771,9 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
             'ring-4 ring-green-400 scale-105': isRecording && !isSpeaking && timeRemaining > 0,
             'ring-4 ring-blue-400 animate-pulse': isSpeaking,
             'ring-4 ring-orange-400': isPreparingFeedback && !isFeedbackTime,
-            'ring-4 ring-yellow-400': isFeedbackTime && timeRemaining > 0,
-            'ring-4 ring-blue-400': timeRemaining <= 0 && timeRemaining > -BUFFER_TIME,
-            'ring-4 ring-red-400': timeRemaining <= -BUFFER_TIME || feedbackSaved
+            'ring-4 ring-yellow-400': isFeedbackTime && timeRemaining > 0 && !feedbackSaved,
+            'ring-4 ring-blue-400': timeRemaining <= 0 && timeRemaining > -BUFFER_TIME && !feedbackSaved,
+            'ring-4 ring-green-500': feedbackSaved
           }
         )}>
         <LiaAvatar />
