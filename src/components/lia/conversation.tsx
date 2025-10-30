@@ -444,12 +444,26 @@ Make it feel natural and warm, like a friend saying goodbye!`
   };
 
   const initAudio = useCallback(() => {
-    if (inputAudioContextRef.current && outputAudioContextRef.current) {
-      console.log('🔊 Audio contexts already initialized');
+    // Check if contexts exist AND are not closed
+    if (inputAudioContextRef.current && 
+        outputAudioContextRef.current && 
+        inputAudioContextRef.current.state !== 'closed' && 
+        outputAudioContextRef.current.state !== 'closed') {
+      console.log('🔊 Audio contexts already initialized and open');
       return;
     }
 
     console.log('🔊 Initializing audio contexts...');
+    
+    // Close old contexts if they exist and are not already closed
+    if (inputAudioContextRef.current && inputAudioContextRef.current.state !== 'closed') {
+      inputAudioContextRef.current.close().catch(() => {});
+    }
+    if (outputAudioContextRef.current && outputAudioContextRef.current.state !== 'closed') {
+      outputAudioContextRef.current.close().catch(() => {});
+    }
+    
+    // Create fresh contexts
     inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     
@@ -497,7 +511,10 @@ Make it feel natural and warm, like a friend saying goodbye!`
         if (part.inlineData?.mimeType?.startsWith('audio/')) {
           console.log('🔊 Audio chunk received');
           const audioCtx = outputAudioContextRef.current;
-          if (!audioCtx) continue;
+          if (!audioCtx || audioCtx.state === 'closed') {
+            console.error('❌ Audio context is closed, cannot play audio');
+            continue;
+          }
 
           try {
             nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioCtx.currentTime);
@@ -752,6 +769,8 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
       }
       
       if (!conversationStarted) {
+        hasInitializedRef.current = false;
+        isInitializingRef.current = false;
         isCleaningUpRef.current = false;
         return;
       }
@@ -770,6 +789,9 @@ Remember: You're a FRIEND helping them practice English. SPEAK SLOWLY AND CLEARL
         outputAudioContextRef.current.close().catch(e => console.warn('Error closing output context:', e));
       }
       
+      // Reset all flags
+      hasInitializedRef.current = false;
+      isInitializingRef.current = false;
       isCleaningUpRef.current = false;
     };
   }, [conversationStarted, stopRecording]);
