@@ -61,7 +61,7 @@ app.prepare().then(() => {
             
             const setup = {
               setup: {
-                model: "models/gemini-2.0-flash-exp",
+                model: "gemini-2.5-flash-native-audio-preview-09-2025",
                 generationConfig: {
                   responseModalities: ["AUDIO"],
                   speechConfig: {
